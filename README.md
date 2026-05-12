@@ -37,13 +37,35 @@ bash scripts/install.sh
 - 写辅助 alias 到 `~/.zshrc`
 - curl 自测代理通路
 
+## 装 Claude Code（国内/国外两种情况）
+
+**国外网络可达 `claude.ai`**：
+```bash
+curl -fsSL https://claude.ai/install.sh | bash
+```
+
+**国内（claude.ai 被地区屏蔽，返回 HTML 错误页）**：
+```bash
+# 走 ClashX/Mihomo（默认 7890 端口，按你的实际改）
+https_proxy=http://127.0.0.1:7890 curl -fsSL https://claude.ai/install.sh | bash
+```
+
+**任何环境也可用 npm（如果你的 npm registry 已切到国内镜像）**：
+```bash
+npm i -g @anthropic-ai/claude-code
+```
+
+装完**重开终端**，跑 `claude --version` 确认 >= 2.1.130 后再跑本包的 install.sh。
+
+---
+
 ## 前置依赖
 
 | 依赖 | 装法 | 备注 |
 |---|---|---|
 | Node.js 18+ | `brew install nvm && nvm install node` | 代理用 |
 | git | macOS 自带或 `brew install git` | clone 用 |
-| Claude Code CLI >= 2.1.130 | `curl -fsSL https://claude.ai/install.sh \| bash` | **关键**：低于这个版本不支持 ANTHROPIC_BASE_URL |
+| Claude Code CLI >= 2.1.130 | 见下方"装 Claude Code" | **关键**：低于这个版本不支持 ANTHROPIC_BASE_URL |
 | GitHub Copilot 订阅 | 公司分配的 Business / Enterprise / 个人 Pro 都行 | 没有就没法用 |
 | 网络代理（国内）| ClashX / Surge / Mihomo / V2RayX | 必须能通 `api.githubcopilot.com` |
 

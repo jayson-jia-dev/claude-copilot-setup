@@ -47,9 +47,32 @@ do
     fi
 done
 if [ -z "$CLAUDE_FOUND" ]; then
+    # 国内访问 claude.ai 会被地区屏蔽（返回 HTML 错误页），
+    # 探测下用户是否有可用代理，给出能直接复制粘贴的命令
+    PROXY_HINT=""
+    for port in 7890 7891 6152 8001 1087; do
+        if nc -z 127.0.0.1 "$port" 2>/dev/null; then
+            PROXY_HINT="https_proxy=http://127.0.0.1:$port "
+            break
+        fi
+    done
     echo "  ⚠ 未找到 Claude Code >= $MIN_CLAUDE。装一个："
-    echo "    curl -fsSL https://claude.ai/install.sh | bash"
-    echo "    然后重开终端再跑这个安装器。"
+    echo ""
+    echo "    国外网络："
+    echo "      curl -fsSL https://claude.ai/install.sh | bash"
+    echo ""
+    if [ -n "$PROXY_HINT" ]; then
+        echo "    国内（已探测到本地代理 ${PROXY_HINT%% *}）："
+        echo "      ${PROXY_HINT}curl -fsSL https://claude.ai/install.sh | bash"
+    else
+        echo "    国内（需要代理，自行替换端口）："
+        echo "      https_proxy=http://127.0.0.1:7890 curl -fsSL https://claude.ai/install.sh | bash"
+    fi
+    echo ""
+    echo "    或者通过 npm（如果 npm registry 可达）："
+    echo "      npm i -g @anthropic-ai/claude-code"
+    echo ""
+    echo "    装完重开终端再跑这个安装器。"
     exit 1
 fi
 
