@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.jayson.claude-copilot-proxy</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__NODE_BIN__</string>
+        <string>__HOME__/claude-code-copilot/scripts/proxy.mjs</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__HOME__/claude-code-copilot</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>__NODE_DIR__:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>__HOME__</string>
+        <!-- ClashX 代理（如果新机不在国内或不用 ClashX，删掉下面三行） -->
+        <key>HTTPS_PROXY</key>
+        <string>http://127.0.0.1:7890</string>
+        <key>HTTP_PROXY</key>
+        <string>http://127.0.0.1:7890</string>
+        <key>NO_PROXY</key>
+        <string>localhost,127.0.0.1</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>__HOME__/Library/Logs/claude-copilot-proxy.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>__HOME__/Library/Logs/claude-copilot-proxy.err.log</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

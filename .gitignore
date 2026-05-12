@@ -1,0 +1,9 @@
+# 本机绝对路径，跨机器无意义
+files/com.jayson.claude-copilot-proxy.plist
+
+# 凭证类（虽然不该出现，但保险）
+*.auth.json
+.claude-copilot-auth*
+
+# macOS 杂项
+.DS_Store
