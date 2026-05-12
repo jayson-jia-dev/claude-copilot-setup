@@ -1,28 +1,28 @@
 # Claude Code × GitHub Copilot 复刻包
 
-把这个文件夹拷到任何一台 Mac 上，跑一条命令就能复刻同样的环境。
-
-## 是什么
-
-让 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 通过你的 GitHub Copilot 订阅跑（无限额度），而不消耗 Anthropic 付费订阅 quota。
+让 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 通过你的 GitHub Copilot 订阅跑（无限额度），不消耗 Anthropic 付费 quota。
 
 - `claude` → 走 Anthropic 订阅（原来怎么用还怎么用）
 - `claude-cp` → 走 Copilot 代理（无限额度，无配额焦虑）
 
 两条路并存、互不干扰。
 
-## 一键复刻
+## 一行命令搞定
 
+**国外网络 / 已配好梯子**：
 ```bash
-# 1. 复制本文件夹到目标机
-# 2. 进入文件夹
-cd ~/Desktop/claude-copilot-setup
-
-# 3. 跑安装脚本
-bash scripts/install.sh
-
-# 4. 重开终端，跑 claude-cp 测试
+git clone https://github.com/jayson-jia-dev/claude-copilot-setup.git ~/claude-copilot-setup && bash ~/claude-copilot-setup/scripts/install.sh
 ```
+
+**国内没配 git 代理**（端口按你梯子改）：
+```bash
+HTTPS_PROXY=http://127.0.0.1:7890 git clone https://github.com/jayson-jia-dev/claude-copilot-setup.git ~/claude-copilot-setup && bash ~/claude-copilot-setup/scripts/install.sh
+```
+
+跑完跟着提示走完 GitHub 扫码授权（30 秒），**重开终端** → `claude-cp` 即可。
+
+> 前置依赖：Node 18+、git、Claude Code (>= 2.1.130)、GitHub Copilot 订阅。
+> Claude Code 装法见下方「装 Claude Code」一节。
 
 安装脚本做的事（**全自动检测，无任何用户特定路径**）：
 - 检查 node / git / claude 是否满足最低版本
