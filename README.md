@@ -1,11 +1,9 @@
-# Claude Code × GitHub Copilot 复刻包
+# Claude Code × GitHub Copilot
 
-让 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 通过你的 GitHub Copilot 订阅跑（无限额度），不消耗 Anthropic 付费 quota。
+在本机跑一个伪装成 VSCode Copilot 插件的 Node 代理（监听 `localhost:18080`），把 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 发出的 Anthropic 协议请求翻译成 OpenAI 协议、换上你的 Copilot OAuth token，再转发到 `api.githubcopilot.com` — 等于让 Claude Code 借你的 Copilot 订阅跑。
 
-- `claude` → 走 Anthropic 订阅（原来怎么用还怎么用）
-- `claude-cp` → 走 Copilot 代理（无限额度，无配额焦虑）
-
-两条路并存、互不干扰。
+- `claude` → Anthropic 订阅
+- `claude-cp` → 本地代理 → Copilot
 
 ## 一行命令搞定
 
