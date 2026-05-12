@@ -104,8 +104,11 @@ tid = d.get('token','')
 print(f\"  token prefix        : {tid[:20]}...\")
 
 # 把 tid 和 api 写到临时文件给后面用
+# tid bearer 含分号（tid=xxx;sku=...;proxy-ep=...），必须单引号包起来
+# 否则 bash source 时分号会被当语句分隔符截断 token
+import shlex
 with open('/tmp/copilot-diag.env', 'w') as f:
-    f.write(f\"TID={tid}\nAPI_BASE={d.get('endpoints',{}).get('api','https://api.githubcopilot.com')}\n\")
+    f.write(f\"TID={shlex.quote(tid)}\nAPI_BASE={shlex.quote(d.get('endpoints',{}).get('api','https://api.githubcopilot.com'))}\n\")
 "
     else
         echo "  body: $(echo "$EXCHANGE_BODY" | head -c 300)"
