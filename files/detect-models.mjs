@@ -16,40 +16,36 @@ import { join } from "node:path"
 const AUTH_FILE = join(homedir(), ".claude-copilot-auth.json")
 const OUT_FILE = join(homedir(), ".claude-copilot-models.json")
 
+// 必须跟 proxy.mjs 完全一致的 header 集合 — 缺 x-initiator 会 403
 const COMMON_HEADERS = {
   "Copilot-Integration-Id": "vscode-chat",
   "Editor-Version": "vscode/1.110.1",
   "Editor-Plugin-Version": "copilot-chat/0.38.2",
   "x-github-api-version": "2025-10-01",
+  "Openai-Intent": "conversation-agent",
   "User-Agent": "GitHubCopilotChat/0.38.2",
+  "x-initiator": "user",  // 关键：Copilot 用这个区分合法客户端
 }
 
-// ─── Step 1: 加载 OAuth token、换 Copilot 短期 Bearer ──────────
+// ─── Step 1: 加载 OAuth token（直接当 Bearer 用，跟 proxy.mjs 同款流程）─────
+// 注意：早期版本走 api.github.com/copilot_internal/v2/token 换短期 Bearer，
+// 但某些 Copilot 套餐（如个人 Pro、教育版）该端点返回 404 不可用。
+// samarth777 的 proxy.mjs 验证过 OAuth token 可以直接打 api.githubcopilot.com，
+// 所以这里也走相同路径，避免依赖一个并非所有套餐都开放的内部端点。
 if (!existsSync(AUTH_FILE)) {
   console.error(`❌ 没找到 ${AUTH_FILE}，先跑 install.sh 走 GitHub Device Flow`)
   process.exit(1)
 }
 
 const auth = JSON.parse(readFileSync(AUTH_FILE, "utf8"))
-const githubToken = auth.access_token
+const copilotToken = auth.access_token  // GitHub OAuth token，直接当 Bearer
 
-if (!githubToken) {
+if (!copilotToken) {
   console.error(`❌ ${AUTH_FILE} 格式不对，缺 access_token`)
   process.exit(1)
 }
 
-console.log("→ 换 Copilot 短期 token...")
-const tokenRes = await fetch(
-  "https://api.github.com/copilot_internal/v2/token",
-  { headers: { Authorization: `token ${githubToken}`, ...COMMON_HEADERS } }
-)
-if (!tokenRes.ok) {
-  console.error(`❌ 换 token 失败: ${tokenRes.status} ${tokenRes.statusText}`)
-  console.error(await tokenRes.text())
-  process.exit(1)
-}
-const { token: copilotToken } = await tokenRes.json()
-console.log("  ✓ 拿到 Copilot Bearer")
+console.log(`✓ 加载 OAuth token (${copilotToken.slice(0, 8)}...)`)
 
 // ─── Step 2: 候选模型（从最新到最老）──────────────────────────
 const FAMILIES = {
@@ -68,9 +64,11 @@ const FAMILIES = {
   haiku: ["claude-haiku-4.5"],
 }
 
+// 用 /chat/completions（OpenAI 协议端点）而非 /v1/messages（Anthropic 端点）
+// 跟 proxy.mjs 转发用的端点保持一致，避免端点差异带来的可用性误差
 async function probe(model) {
   try {
-    const res = await fetch("https://api.githubcopilot.com/v1/messages", {
+    const res = await fetch("https://api.githubcopilot.com/chat/completions", {
       method: "POST",
       headers: {
         ...COMMON_HEADERS,
