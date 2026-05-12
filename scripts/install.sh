@@ -29,8 +29,12 @@ NODE_DIR="$(dirname "$NODE_BIN")"
 NODE_VER="$(node --version)"
 echo "  ✓ node: $NODE_VER ($NODE_BIN)"
 
-# 自动找一个 ≥ 2.1.130 的 claude，没有就提示用户装
-MIN_CLAUDE="2.1.130"
+# 自动找一个版本足够新的 claude
+# 2.1.100 是实测能稳定支持 ANTHROPIC_BASE_URL 的下限（v2.1.81 确认不行，
+# 中间没逐版本测，2.1.100 保守一点）
+# 注意：Homebrew 的 claude-code formula 经常滞后官方两三周，
+#       brew "latest" 不等于 Anthropic latest
+MIN_CLAUDE="2.1.100"
 CLAUDE_FOUND=""
 CLAUDE_SCANNED=""  # 调试用：记录扫过哪些版本，失败时打印出来给同事看
 
@@ -92,20 +96,20 @@ if [ -z "$CLAUDE_FOUND" ]; then
         echo "  当前扫到的版本："
         printf '%s' "$CLAUDE_SCANNED"
         echo ""
-        echo "  升级方法（按你当前的安装方式选）："
+        echo "  ⚠ 注意：Homebrew 的 claude-code formula 通常滞后官方 2-3 周。"
+        echo "    'brew upgrade claude-code' 即使提示 already up-to-date，"
+        echo "    也可能依然是老版本。**推荐改用官方 installer**："
         echo ""
-        echo "  ▸ 如果当前 claude 在 /opt/homebrew/bin 或 /usr/local/bin（Homebrew 装的）："
-        echo "      brew update && brew upgrade claude-code"
-        echo ""
-        echo "  ▸ 如果是 npm 装的（任何 node 包管理器）："
-        echo "      npm i -g @anthropic-ai/claude-code@latest --registry=https://registry.npmjs.org/"
-        echo ""
-        echo "  ▸ 不确定？直接用官方 installer 覆盖装最新版（推荐，最稳）："
+        echo "  ▸ 官方 installer 覆盖装最新版（最稳，会装到 ~/.local/bin/claude，"
+        echo "    wrapper 会优先用这个新的，老的 brew 版本留着不冲突）："
         echo "      curl -fsSL https://claude.ai/install.sh | bash"
         if [ -n "$PROXY_HINT" ]; then
             echo "      # 国内（已探测到本地代理 ${PROXY_HINT%% *}）："
             echo "      ${PROXY_HINT}curl -fsSL https://claude.ai/install.sh | bash"
         fi
+        echo ""
+        echo "  ▸ 如果你坚持用 npm 装："
+        echo "      npm i -g @anthropic-ai/claude-code@latest --registry=https://registry.npmjs.org/"
         echo ""
         echo "  升级完后**重开终端**，再跑刚才那条 bootstrap 命令。"
     else
