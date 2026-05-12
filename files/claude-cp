@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# claude-cp — Claude Code via GitHub Copilot (local proxy)
+#
+# 启动 Claude Code 走本地 Copilot 代理。要求 Claude Code >= 2.1.130
+# （更老版本不支持 ANTHROPIC_BASE_URL 环境变量重定向）。
+#
+# 自动从常见安装位置找出符合版本要求的 claude 二进制，避开 PATH 上的老版本。
+
+set -e
+
+PROXY_URL="${COPILOT_PROXY_URL:-http://localhost:18080}"
+MIN_VERSION="2.1.130"
+
+# ─── 版本比较 ────────────────────────────────────────────────
+# 返回 0 表示 $1 >= $2
+version_ge() {
+    [ "$1" = "$2" ] && return 0
+    printf '%s\n%s\n' "$2" "$1" | sort -V -C 2>/dev/null
+}
+
+# ─── 候选 claude 二进制（按优先级）──────────────────────────
+# 顺序原则：版本越新越准的越靠前
+list_candidates() {
+    # 1. Anthropic 官方安装器默认位置（最可信）
+    echo "$HOME/.local/bin/claude"
+    # 2. nvm 各 node 版本里 npm i -g 装的，倒序（最新版本先）
+    if [ -d "$HOME/.nvm/versions/node" ]; then
+        ls -d "$HOME"/.nvm/versions/node/*/bin/claude 2>/dev/null | sort -rV
+    fi
+    # 3. Homebrew (Apple Silicon)
+    echo "/opt/homebrew/bin/claude"
+    # 4. PATH 上 which 找到的（兜底）
+    command -v claude 2>/dev/null
+    # 5. Homebrew (Intel) / 经典 npm 全局
+    echo "/usr/local/bin/claude"
+}
+
+# ─── 找出第一个符合版本要求的二进制 ──────────────────────────
+find_claude() {
+    seen=""
+    for candidate in $(list_candidates); do
+        [ -z "$candidate" ] && continue
+        [ -x "$candidate" ] || continue
+        # 去重（同一路径可能被多个候选源命中）
+        case ":$seen:" in *":$candidate:"*) continue ;; esac
+        seen="$seen:$candidate"
+
+        ver=$("$candidate" --version 2>/dev/null | awk '{print $1}')
+        [ -z "$ver" ] && continue
+
+        if version_ge "$ver" "$MIN_VERSION"; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+CLAUDE_BIN=$(find_claude) || {
+    cat >&2 <<EOF
+❌ 找不到 Claude Code >= ${MIN_VERSION}
+
+老版本不支持 ANTHROPIC_BASE_URL 环境变量，没法走代理。
+解决方法：
+  方法 A（推荐）：curl -fsSL https://claude.ai/install.sh | bash
+  方法 B：npm i -g @anthropic-ai/claude-code
+  装完后重开终端再跑 claude-cp。
+
+诊断你机器上的现有版本：
+  for f in \$HOME/.local/bin/claude /usr/local/bin/claude /opt/homebrew/bin/claude; do
+      [ -x "\$f" ] && echo "[\$f] \$(\$f --version 2>&1 | head -1)"
+  done
+EOF
+    exit 1
+}
+
+# ─── 探测代理是否在跑 ────────────────────────────────────────
+if ! curl -s -o /dev/null -m 2 "${PROXY_URL}" 2>/dev/null; then
+    # 探测要求是 200 也行 / 404 也行，只要服务在响应就行
+    nc -z localhost 18080 2>/dev/null || {
+        echo "⚠ 本地代理 (${PROXY_URL}) 没在跑。尝试启动 launchd 服务..." >&2
+        launchctl kickstart -k "gui/$(id -u)/com.jayson.claude-copilot-proxy" 2>/dev/null || true
+        sleep 2
+        nc -z localhost 18080 2>/dev/null || {
+            echo "❌ 代理启动失败，看日志: tail ~/Library/Logs/claude-copilot-proxy.err.log" >&2
+            exit 1
+        }
+    }
+fi
+
+# ─── 启动 ────────────────────────────────────────────────────
+export ANTHROPIC_BASE_URL="$PROXY_URL"
+export ANTHROPIC_API_KEY="copilot-proxy"
+exec "$CLAUDE_BIN" "$@"

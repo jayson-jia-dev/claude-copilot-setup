@@ -1,7 +1,5 @@
-# Claude Code via GitHub Copilot (本地代理，无限额度)
-# Daemon: ~/Library/LaunchAgents/com.jayson.claude-copilot-proxy.plist
-# Logs:   ~/Library/Logs/claude-copilot-proxy.{out,err}.log
-alias claude-cp='ANTHROPIC_BASE_URL=http://localhost:18080 ANTHROPIC_API_KEY=copilot-proxy claude'
-alias claude-cp-status='launchctl list | grep claude-copilot-proxy; lsof -nP -iTCP:18080 -sTCP:LISTEN'
+# Claude Code via GitHub Copilot 辅助 alias
+# 主命令 claude-cp 是 ~/.local/bin/claude-cp wrapper 脚本，不在这里 alias
+alias claude-cp-status='launchctl list | grep claude-copilot-proxy; lsof -nP -iTCP:18080 -sTCP:LISTEN 2>/dev/null'
 alias claude-cp-restart='launchctl kickstart -k gui/$(id -u)/com.jayson.claude-copilot-proxy'
 alias claude-cp-log='tail -f ~/Library/Logs/claude-copilot-proxy.out.log'

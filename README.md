@@ -1,20 +1,20 @@
 # Claude Code × GitHub Copilot 复刻包
 
-把这个文件夹拷到新 Mac 上，跑一条命令就能复刻同样的环境。
+把这个文件夹拷到任何一台 Mac 上，跑一条命令就能复刻同样的环境。
 
 ## 是什么
 
-让 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 通过公司发的 GitHub Copilot Business 订阅跑（无限额度），而不消耗 Anthropic 的付费订阅 quota。
+让 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 通过你的 GitHub Copilot 订阅跑（无限额度），而不消耗 Anthropic 付费订阅 quota。
 
-- `claude` → 走 Anthropic 订阅，Opus 4.7
-- `claude-cp` → 走 Copilot，Opus 4.6（实测可用的最高版本）
+- `claude` → 走 Anthropic 订阅（原来怎么用还怎么用）
+- `claude-cp` → 走 Copilot 代理（无限额度，无配额焦虑）
 
 两条路并存、互不干扰。
 
-## 一键复刻（新 Mac）
+## 一键复刻
 
 ```bash
-# 1. 复制文件夹到新机（U 盘、AirDrop、iCloud Drive 都行）
+# 1. 复制本文件夹到目标机
 # 2. 进入文件夹
 cd ~/Desktop/claude-copilot-setup
 
@@ -24,24 +24,46 @@ bash scripts/install.sh
 # 4. 重开终端，跑 claude-cp 测试
 ```
 
-脚本会：
-- 克隆 [samarth777/claude-code-copilot](https://github.com/samarth777/claude-code-copilot) 到 `~/claude-code-copilot`
-- 用本包里改过的 `proxy.mjs` 覆盖原版（含 Opus 4.7→4.6 映射、Haiku→Sonnet 兜底）
-- 触发 GitHub Device Flow 授权拿 OAuth token（旧机器的 token 不带过来，原因见安全说明）
-- 生成 macOS launchd plist 路径自适应到新机的 node 安装位置
+安装脚本做的事（**全自动检测，无任何用户特定路径**）：
+- 检查 node / git / claude 是否满足最低版本
+- 克隆代理仓库到 `~/claude-code-copilot/`
+- 用本包改过的 `proxy.mjs` 覆盖（含 Opus 4.7→4.6 + Haiku→Sonnet 兜底）
+- 触发 GitHub Device Flow 拿 OAuth token
+- **自动探测** HTTPS_PROXY（ClashX 7890、Surge 6152、V2RayX 8001 等）
+- 生成 launchd plist（用当前机器的 node 路径、HOME 路径）
 - 加载 launchd 服务（开机自启 + 崩溃自重启）
-- 把 4 个 alias 写入 `~/.zshrc`
-- 跑 curl 验证 Copilot 通路
+- 安装 `claude-cp` wrapper 到 `~/.local/bin/`（**不是 alias**，更鲁棒）
+- 自动追加 `~/.local/bin` 到 PATH（如果还没在的话）
+- 写辅助 alias 到 `~/.zshrc`
+- curl 自测代理通路
 
-## 前置依赖（新 Mac 上先装好）
+## 前置依赖
 
-| 依赖 | 装法 |
-|---|---|
-| Node.js 18+ | `brew install nvm` 然后 `nvm install node` |
-| git | macOS 自带或 `brew install git` |
-| Claude Code CLI | `npm i -g @anthropic-ai/claude-code` |
-| GitHub Copilot 订阅 | 公司分配的 Business / Enterprise / 个人也行 |
-| 网络代理（国内）| ClashX / Surge / Mihomo，确保 `api.githubcopilot.com` 能通 |
+| 依赖 | 装法 | 备注 |
+|---|---|---|
+| Node.js 18+ | `brew install nvm && nvm install node` | 代理用 |
+| git | macOS 自带或 `brew install git` | clone 用 |
+| Claude Code CLI >= 2.1.130 | `curl -fsSL https://claude.ai/install.sh \| bash` | **关键**：低于这个版本不支持 ANTHROPIC_BASE_URL |
+| GitHub Copilot 订阅 | 公司分配的 Business / Enterprise / 个人 Pro 都行 | 没有就没法用 |
+| 网络代理（国内）| ClashX / Surge / Mihomo / V2RayX | 必须能通 `api.githubcopilot.com` |
+
+## 为什么用 wrapper 不用 alias
+
+| | alias（旧方案） | wrapper 脚本（现方案） |
+|---|---|---|
+| 实现 | `alias claude-cp='... claude'` | `~/.local/bin/claude-cp` 可执行文件 |
+| `claude` 解析 | 跟 PATH 顺序走（不稳） | 主动扫描所有可能位置选最新的 |
+| 老版本污染（如 /usr/local/bin/claude 是 2.1.81）| 会用到老版本，**失败** | 跳过，找下一个 |
+| 同事机器适应性 | 看 PATH 命运 | **完全无视 PATH**，稳 |
+
+wrapper 内置逻辑（按优先级查找）：
+1. `~/.local/bin/claude`（Anthropic 官方安装器默认位置）
+2. `~/.nvm/versions/node/*/bin/claude`（nvm 各版本，最新优先）
+3. `/opt/homebrew/bin/claude`（Apple Silicon Homebrew）
+4. `which claude`（PATH 兜底）
+5. `/usr/local/bin/claude`（Intel Homebrew / 经典 npm）
+
+只要任意一个版本 >= 2.1.130 就用它，找不到就报错并给出安装指引。
 
 ## 文件夹结构
 
@@ -49,35 +71,24 @@ bash scripts/install.sh
 claude-copilot-setup/
 ├── README.md                       ← 你正在看的
 ├── docs/
-│   ├── architecture.md             ← 原理、协议转换、数据流
-│   ├── troubleshooting.md          ← 故障排查手册
-│   └── known-issues.md             ← 已知坑（cc-switch、模型可用性差异）
+│   ├── architecture.md             原理 + 数据流图 + 协议转换
+│   ├── troubleshooting.md          故障排查手册
+│   └── known-issues.md             已知坑（cc-switch、模型可用性等）
 ├── files/
-│   ├── proxy.mjs                   ← 改过的代理代码（关键文件）
-│   ├── com.jayson.claude-copilot-proxy.plist           ← 本机当前的 plist
-│   ├── com.jayson.claude-copilot-proxy.plist.template  ← 路径占位符版（安装脚本用）
-│   └── zshrc-aliases.sh            ← 4 个 alias
+│   ├── proxy.mjs                   改过的代理代码（关键文件）
+│   ├── claude-cp                   ★ wrapper 脚本（核心）
+│   └── zshrc-aliases.sh            辅助 alias（status/restart/log）
 └── scripts/
-    └── install.sh                  ← 一键安装
+    └── install.sh                  一键安装（全自动检测）
 ```
 
 ## 安全说明
 
-**这个包不包含 GitHub OAuth token**。
+**本包不含 GitHub OAuth token**。
 
-- 原因：那是凭证，跟 SSH 私钥同级，不能跨机器明文复制
-- 后果：新机器跑 install.sh 时会走一遍 Device Flow（浏览器扫码授权）
-- 一次性的事，30 秒搞定
-
-如果你**坚持**要把 token 也带过去（比如离线环境无法走 Device Flow），手动操作：
-
-```bash
-# 在源机器上
-cat ~/.claude-copilot-auth.json
-# 在新机器上把内容粘到同样路径
-```
-
-但记住：token 泄露 = 别人能白嫖你的 Copilot quota，所以 U 盘也好、文件传输也好，传完赶紧删中转副本。
+- 原因：token 是凭证，跨机器明文复制有风险
+- 后果：每台机器跑 install.sh 时各自走一遍 GitHub Device Flow（浏览器扫码授权 30 秒）
+- 同事用的时候各自走自己的 GitHub 账号授权，互不干扰
 
 ## 日常运维
 
@@ -90,14 +101,31 @@ cat ~/.claude-copilot-auth.json
 
 代理监听 `http://localhost:18080`，日志写到 `~/Library/Logs/claude-copilot-proxy.{out,err}.log`。
 
+## 给同事用之前
+
+1. 让同事确认自己有 Copilot 订阅（不一定是 Business，个人 Pro 也行，但模型可用性可能不一样）
+2. 让同事自己装 Node + git + Claude Code（最新版）
+3. 把这个文件夹给他（AirDrop / iCloud / 内网网盘 / git 仓库都行）
+4. 让他在文件夹里跑 `bash scripts/install.sh`
+5. 装完重开终端 → `claude-cp` 即可
+
+如果同事是个人 Pro 而非 Business，可用模型不一样，可能需要调 `~/claude-code-copilot/scripts/proxy.mjs` 里的 `MODEL_MAP`。查实际可用模型：
+```bash
+~/claude-code-copilot && curl -s -X POST http://localhost:18080/v1/messages \
+  -H "Content-Type: application/json" -H "x-api-key: copilot-proxy" \
+  -d '{"model":"claude-opus-4-X","max_tokens":5,"messages":[{"role":"user","content":"x"}]}'
+# 看 error.message 里的 "Available models: [...]" 列表
+```
+
 ## 不要做的事
 
-- ❌ **不要用 cc-switch 的 Copilot profile**（已知 bug，看 `docs/known-issues.md`）
-- ❌ **不要打开 cc-switch 的「启用本地路由」全局开关**（会污染所有 Claude Code 窗口）
-- ❌ **不要把 token 文件提交到 git**
+- ❌ 不要用 cc-switch 的 Copilot profile（已知 bug，看 `docs/known-issues.md`）
+- ❌ 不要打开 cc-switch 的「启用本地路由」全局开关
+- ❌ 不要把 token 文件提交到 git
+- ❌ 不要跑 `claude /logout`（会清掉订阅 Keychain，所有 Claude Code 窗口一起死）
 
 ## 参考
 
 - 上游代理仓库：https://github.com/samarth777/claude-code-copilot
-- 本配置初次搭建日期：2026-05-12
+- 本配置初次搭建：2026-05-12
 - 配置作者：Jayson @ Reolink
