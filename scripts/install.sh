@@ -84,37 +84,49 @@ if [ -z "$CLAUDE_FOUND" ]; then
             break
         fi
     done
-    echo "  ⚠ 未找到 Claude Code >= ${MIN_CLAUDE}"
+
+    # 区分两种场景：装过但太老（升级）vs 完全没装（首次安装）
     if [ -n "$CLAUDE_SCANNED" ]; then
+        echo "  ⚠ 你装的 Claude Code 版本太老，需要升级到 >= ${MIN_CLAUDE}"
         echo ""
-        echo "  扫到的 claude（但版本都太老）："
+        echo "  当前扫到的版本："
         printf '%s' "$CLAUDE_SCANNED"
+        echo ""
+        echo "  升级方法（按你当前的安装方式选）："
+        echo ""
+        echo "  ▸ 如果当前 claude 在 /opt/homebrew/bin 或 /usr/local/bin（Homebrew 装的）："
+        echo "      brew update && brew upgrade claude-code"
+        echo ""
+        echo "  ▸ 如果是 npm 装的（任何 node 包管理器）："
+        echo "      npm i -g @anthropic-ai/claude-code@latest --registry=https://registry.npmjs.org/"
+        echo ""
+        echo "  ▸ 不确定？直接用官方 installer 覆盖装最新版（推荐，最稳）："
+        echo "      curl -fsSL https://claude.ai/install.sh | bash"
+        if [ -n "$PROXY_HINT" ]; then
+            echo "      # 国内（已探测到本地代理 ${PROXY_HINT%% *}）："
+            echo "      ${PROXY_HINT}curl -fsSL https://claude.ai/install.sh | bash"
+        fi
+        echo ""
+        echo "  升级完后**重开终端**，再跑刚才那条 bootstrap 命令。"
     else
-        echo "  系统里完全没找到 claude 二进制。"
+        echo "  ⚠ 系统里没装 Claude Code，先装一个："
+        echo ""
+        echo "    国外网络："
+        echo "      curl -fsSL https://claude.ai/install.sh | bash"
+        echo ""
+        if [ -n "$PROXY_HINT" ]; then
+            echo "    国内（已探测到本地代理 ${PROXY_HINT%% *}）："
+            echo "      ${PROXY_HINT}curl -fsSL https://claude.ai/install.sh | bash"
+        else
+            echo "    国内（需要代理，自行替换端口）："
+            echo "      https_proxy=http://127.0.0.1:7890 curl -fsSL https://claude.ai/install.sh | bash"
+        fi
+        echo ""
+        echo "    或者通过 npm："
+        echo "      npm i -g @anthropic-ai/claude-code@latest --registry=https://registry.npmjs.org/"
+        echo ""
+        echo "    装完**重开终端**，再跑刚才那条 bootstrap 命令。"
     fi
-    echo ""
-    echo "  装一个 / 升级到最新："
-    echo ""
-    echo "    国外网络："
-    echo "      curl -fsSL https://claude.ai/install.sh | bash"
-    echo ""
-    if [ -n "$PROXY_HINT" ]; then
-        echo "    国内（已探测到本地代理 ${PROXY_HINT%% *}）："
-        echo "      ${PROXY_HINT}curl -fsSL https://claude.ai/install.sh | bash"
-    else
-        echo "    国内（需要代理，自行替换端口）："
-        echo "      https_proxy=http://127.0.0.1:7890 curl -fsSL https://claude.ai/install.sh | bash"
-    fi
-    echo ""
-    echo "    或者通过 npm（如果 npm registry 可达）："
-    echo "      npm i -g @anthropic-ai/claude-code@latest --registry=https://registry.npmjs.org/"
-    echo ""
-    echo "    装完**重开终端**再跑这个安装器。"
-    echo ""
-    echo "  如果你确信装过最新版但还是被这里拒绝，请贴这三行给配置作者："
-    echo "    command -v claude"
-    echo "    claude --version"
-    echo "    ls -la \$(command -v claude)"
     exit 1
 fi
 
