@@ -143,8 +143,10 @@ else
     git clone --depth 1 https://github.com/samarth777/claude-code-copilot.git "$TARGET_DIR"
 fi
 
-echo "  → 覆盖 proxy.mjs（含 Opus 4.7→4.6 映射、Haiku→Sonnet 兜底）"
+echo "  → 覆盖 proxy.mjs + 拷贝 detect-models.mjs"
 cp "$PKG_DIR/files/proxy.mjs" "$TARGET_DIR/scripts/proxy.mjs"
+cp "$PKG_DIR/files/detect-models.mjs" "$TARGET_DIR/scripts/detect-models.mjs"
+chmod +x "$TARGET_DIR/scripts/detect-models.mjs"
 
 # ─── [3/8] GitHub Copilot OAuth ───────────────────────────────
 echo ""
@@ -248,9 +250,9 @@ cat > "$PLIST_DST" <<EOF
 EOF
 echo "  ✓ 写入 $PLIST_DST"
 
-# ─── [6/8] 启动 launchd 服务 ──────────────────────────────────
+# ─── [6/8] 启动 launchd 服务 + 实测可用模型 ──────────────────
 echo ""
-echo "[6/8] 启动 launchd 服务..."
+echo "[6/8] 启动 launchd 服务 + 实测可用模型..."
 launchctl unload "$PLIST_DST" 2>/dev/null || true
 launchctl load "$PLIST_DST"
 sleep 2
@@ -259,6 +261,20 @@ if launchctl list | grep -q "${PLIST_LABEL}"; then
 else
     echo "  ❌ 启动失败，看日志: tail ~/Library/Logs/claude-copilot-proxy.err.log"
     exit 1
+fi
+
+echo ""
+echo "  → 实测当前 Copilot 套餐可用的最高级 opus/sonnet/haiku..."
+echo ""
+if "$NODE_BIN" "$TARGET_DIR/scripts/detect-models.mjs" 2>&1 | sed 's/^/    /'; then
+    echo ""
+    echo "    → 重启代理服务加载实测映射..."
+    launchctl kickstart -k "gui/$(id -u)/${PLIST_LABEL}" 2>/dev/null
+    sleep 1
+    echo "    ✓ 代理已重启，新映射生效"
+else
+    echo ""
+    echo "    ⚠ 模型实测失败（不阻断安装，代理会用硬编码 fallback 映射）"
 fi
 
 # ─── [7/8] 安装 wrapper 脚本 + alias ─────────────────────────

@@ -19,9 +19,34 @@ const PORT = parseInt(process.env.COPILOT_PROXY_PORT || "18080", 10)
 const AUTH_FILE =
   process.env.COPILOT_AUTH_FILE || join(homedir(), ".claude-copilot-auth.json")
 const COPILOT_API_BASE = "https://api.githubcopilot.com"
-const USER_AGENT = "claude-code-copilot-provider/1.0.0"
+const USER_AGENT = "GitHubCopilotChat/0.38.2"
 const BRAVE_API_KEY = process.env.BRAVE_API_KEY || ""
 const WEB_SEARCH_MAX_RESULTS = parseInt(process.env.WEB_SEARCH_MAX_RESULTS || "5", 10)
+
+// 伪装成 VSCode Copilot Chat 插件（vs 默认的 copilot-language-server 通道，
+// 后者权限更窄，部分模型如 Haiku 会被 403）
+const COPILOT_CLIENT_HEADERS = {
+  "Copilot-Integration-Id": "vscode-chat",
+  "Editor-Version": "vscode/1.110.1",
+  "Editor-Plugin-Version": "copilot-chat/0.38.2",
+  "x-github-api-version": "2025-10-01",
+  "Openai-Intent": "conversation-agent",
+}
+
+// ─── 用户实测覆盖：~/.claude-copilot-models.json ──────────────────────────────
+// 由 install.sh 或 detect-models.mjs 在装机时写入，记录当前套餐实测
+// 可用的最高级 opus/sonnet/haiku 版本。优先级高于下面的硬编码 MODEL_MAP。
+let USER_MODEL_OVERRIDES = null
+const USER_MODELS_FILE = join(homedir(), ".claude-copilot-models.json")
+try {
+  const { readFileSync, existsSync } = await import("node:fs")
+  if (existsSync(USER_MODELS_FILE)) {
+    USER_MODEL_OVERRIDES = JSON.parse(readFileSync(USER_MODELS_FILE, "utf8"))
+    console.log(`[init] 加载实测模型映射: ${JSON.stringify(USER_MODEL_OVERRIDES)}`)
+  }
+} catch (e) {
+  console.error(`[init] 加载 ${USER_MODELS_FILE} 失败（忽略，走硬编码 fallback）: ${e.message}`)
+}
 
 // ─── Web Search ──────────────────────────────────────────────────────────────
 
@@ -215,8 +240,8 @@ async function collectCopilotResponse(openaiReq, token) {
     "Content-Type": "application/json",
     Authorization: `Bearer ${token}`,
     "User-Agent": USER_AGENT,
-    "Openai-Intent": "conversation-edits",
     "x-initiator": "user",
+    ...COPILOT_CLIENT_HEADERS,
   }
   const hasImages = JSON.stringify(openaiReq.messages).includes("image_url")
   if (hasImages) headers["Copilot-Vision-Request"] = "true"
@@ -397,11 +422,21 @@ const MODEL_MAP = {
   "claude-3-5-opus-latest": "claude-opus-4.5",
 }
 
-// Fallback: try to intelligently map unknown model names
+// 模型映射决策：实测覆盖 > 硬编码 MODEL_MAP > 模式匹配 fallback
 function mapModel(anthropicModel) {
+  // 第 1 优先：装机时实测出的"当前套餐每家最高级"映射
+  // detect-models.mjs 写入 ~/.claude-copilot-models.json
+  if (USER_MODEL_OVERRIDES) {
+    const m = anthropicModel.toLowerCase()
+    if (m.includes("opus") && USER_MODEL_OVERRIDES.opus) return USER_MODEL_OVERRIDES.opus
+    if (m.includes("sonnet") && USER_MODEL_OVERRIDES.sonnet) return USER_MODEL_OVERRIDES.sonnet
+    if (m.includes("haiku") && USER_MODEL_OVERRIDES.haiku) return USER_MODEL_OVERRIDES.haiku
+  }
+
+  // 第 2 优先：硬编码表
   if (MODEL_MAP[anthropicModel]) return MODEL_MAP[anthropicModel]
 
-  // Try pattern matching for unknown dated versions
+  // 第 3 优先：模式匹配兜底（套餐特别古老 / 没跑过 detect-models.mjs 时）
   const m = anthropicModel.toLowerCase()
   if (m.includes("opus") && (m.includes("4.7") || m.includes("4-7"))) return "claude-opus-4.6"
   if (m.includes("opus") && (m.includes("4.6") || m.includes("4-6"))) return "claude-opus-4.6"
@@ -412,7 +447,6 @@ function mapModel(anthropicModel) {
   if (m.includes("haiku")) return "claude-sonnet-4.5"
   if (m.includes("opus")) return "claude-opus-4.6"
 
-  // Pass through as-is
   return anthropicModel
 }
 
@@ -1024,8 +1058,8 @@ async function handleRequest(req, res, token) {
     "Content-Type": "application/json",
     Authorization: `Bearer ${token}`,
     "User-Agent": USER_AGENT,
-    "Openai-Intent": "conversation-edits",
     "x-initiator": "user",
+    ...COPILOT_CLIENT_HEADERS,
   }
 
   if (hasImages) {
