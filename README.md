@@ -11,12 +11,12 @@
 
 **国外网络 / 已配好梯子**：
 ```bash
-git clone https://github.com/jayson-jia-dev/claude-copilot-setup.git ~/claude-copilot-setup && bash ~/claude-copilot-setup/scripts/install.sh
+curl -fsSL https://raw.githubusercontent.com/jayson-jia-dev/claude-copilot-setup/main/bootstrap.sh | bash
 ```
 
 **国内没配 git 代理**（端口按你梯子改）：
 ```bash
-HTTPS_PROXY=http://127.0.0.1:7890 git clone https://github.com/jayson-jia-dev/claude-copilot-setup.git ~/claude-copilot-setup && bash ~/claude-copilot-setup/scripts/install.sh
+HTTPS_PROXY=http://127.0.0.1:7890 bash -c "$(curl -fsSL https://raw.githubusercontent.com/jayson-jia-dev/claude-copilot-setup/main/bootstrap.sh)"
 ```
 
 跑完跟着提示走完 GitHub 扫码授权（30 秒），**重开终端** → `claude-cp` 即可。
