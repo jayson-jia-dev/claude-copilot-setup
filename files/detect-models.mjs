@@ -27,25 +27,46 @@ const COMMON_HEADERS = {
   "x-initiator": "user",  // 关键：Copilot 用这个区分合法客户端
 }
 
-// ─── Step 1: 加载 OAuth token（直接当 Bearer 用，跟 proxy.mjs 同款流程）─────
-// 注意：早期版本走 api.github.com/copilot_internal/v2/token 换短期 Bearer，
-// 但某些 Copilot 套餐（如个人 Pro、教育版）该端点返回 404 不可用。
-// samarth777 的 proxy.mjs 验证过 OAuth token 可以直接打 api.githubcopilot.com，
-// 所以这里也走相同路径，避免依赖一个并非所有套餐都开放的内部端点。
+// ─── Step 1: 加载 OAuth token，换发短期 Bearer ──────────────────────────────
+// VSCode Copilot 实际做法：先用 ghu_ OAuth token 调 /copilot_internal/v2/token
+// 换一个短期 Bearer（tid=...），用它打 /chat/completions。直接拿 OAuth 当 Bearer
+// 会触发抗滥用限流，返回 403/400 抖动结果。
 if (!existsSync(AUTH_FILE)) {
   console.error(`❌ 没找到 ${AUTH_FILE}，先跑 install.sh 走 GitHub Device Flow`)
   process.exit(1)
 }
 
 const auth = JSON.parse(readFileSync(AUTH_FILE, "utf8"))
-const copilotToken = auth.access_token  // GitHub OAuth token，直接当 Bearer
+const githubToken = auth.access_token
 
-if (!copilotToken) {
+if (!githubToken) {
   console.error(`❌ ${AUTH_FILE} 格式不对，缺 access_token`)
   process.exit(1)
 }
 
-console.log(`✓ 加载 OAuth token (${copilotToken.slice(0, 8)}...)`)
+console.log(`✓ 加载 OAuth token (${githubToken.slice(0, 8)}...)`)
+console.log(`→ 换发 Copilot 短期 Bearer (api.github.com/copilot_internal/v2/token)...`)
+
+const exchangeRes = await fetch(
+  "https://api.github.com/copilot_internal/v2/token",
+  {
+    headers: {
+      Authorization: `token ${githubToken}`,
+      ...COMMON_HEADERS,
+    },
+  }
+)
+if (!exchangeRes.ok) {
+  const body = await exchangeRes.text()
+  console.error(`❌ 换发短期 Bearer 失败 (HTTP ${exchangeRes.status}):`)
+  console.error(body.slice(0, 300))
+  process.exit(1)
+}
+const exchangeData = await exchangeRes.json()
+const copilotToken = exchangeData.token
+const COPILOT_API_BASE = exchangeData.endpoints?.api || "https://api.githubcopilot.com"
+console.log(`  ✓ 拿到 Bearer (${copilotToken.slice(0, 12)}...)`)
+console.log(`  ✓ Copilot API endpoint: ${COPILOT_API_BASE}`)
 
 // ─── Step 2: 候选模型（从最新到最老）──────────────────────────
 const FAMILIES = {
@@ -68,7 +89,7 @@ const FAMILIES = {
 // 跟 proxy.mjs 转发用的端点保持一致，避免端点差异带来的可用性误差
 async function probe(model) {
   try {
-    const res = await fetch("https://api.githubcopilot.com/chat/completions", {
+    const res = await fetch(`${COPILOT_API_BASE}/chat/completions`, {
       method: "POST",
       headers: {
         ...COMMON_HEADERS,

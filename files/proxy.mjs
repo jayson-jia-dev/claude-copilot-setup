@@ -236,9 +236,10 @@ async function duckDuckGoInstantAnswer(query) {
  * Used internally for the web search tool call loop.
  */
 async function collectCopilotResponse(openaiReq, token) {
+  const bearer = await getCopilotBearer(token)
   const headers = {
     "Content-Type": "application/json",
-    Authorization: `Bearer ${token}`,
+    Authorization: `Bearer ${bearer.token}`,
     "User-Agent": USER_AGENT,
     "x-initiator": "user",
     ...COPILOT_CLIENT_HEADERS,
@@ -247,7 +248,7 @@ async function collectCopilotResponse(openaiReq, token) {
   if (hasImages) headers["Copilot-Vision-Request"] = "true"
 
   const reqBody = { ...openaiReq, stream: false }
-  const copilotRes = await fetch(`${COPILOT_API_BASE}/chat/completions`, {
+  const copilotRes = await fetch(`${bearer.api_base}/chat/completions`, {
     method: "POST",
     headers,
     body: JSON.stringify(reqBody),
@@ -482,6 +483,43 @@ function loadAuth() {
     console.error(`✗ Failed to read auth file: ${err.message}`)
     process.exit(1)
   }
+}
+
+// ─── 短期 Bearer 换发（VSCode 标准做法）─────────────────────────────────────
+// 直接拿 GitHub OAuth token (ghu_) 当 Bearer 调 /chat/completions 会触发
+// Copilot 抗滥用限流（403/400 抖动 + 模型可用性虚假）。VSCode 实际是先调
+// /copilot_internal/v2/token 换一个短期 Bearer（tid=...，~30 分钟有效），
+// 用这个 Bearer 走聊天 API，限流配额完全不同。
+let _copilotBearerCache = null
+async function getCopilotBearer(githubToken) {
+  const now = Math.floor(Date.now() / 1000)
+  if (_copilotBearerCache && _copilotBearerCache.expires_at - 60 > now) {
+    return _copilotBearerCache
+  }
+  const res = await fetch(
+    "https://api.github.com/copilot_internal/v2/token",
+    {
+      headers: {
+        Authorization: `token ${githubToken}`,
+        ...COPILOT_CLIENT_HEADERS,
+        "User-Agent": USER_AGENT,
+      },
+    }
+  )
+  if (!res.ok) {
+    const body = await res.text()
+    throw new Error(
+      `Failed to exchange Copilot token (HTTP ${res.status}): ${body.slice(0, 200)}`
+    )
+  }
+  const data = await res.json()
+  _copilotBearerCache = {
+    token: data.token,                                     // tid=...;exp=...
+    api_base: data.endpoints?.api || "https://api.githubcopilot.com",
+    expires_at: data.expires_at || now + 1500,             // 默认 25 分钟
+  }
+  console.log(`[copilot-auth] ✓ 换发短期 Bearer，过期: ${new Date(_copilotBearerCache.expires_at * 1000).toISOString()}, api: ${_copilotBearerCache.api_base}`)
+  return _copilotBearerCache
 }
 
 // ─── Message Translation (Anthropic → OpenAI) ───────────────────────────────
@@ -1067,9 +1105,10 @@ async function handleRequest(req, res, token) {
   const hasImages = JSON.stringify(openaiReq.messages).includes("image_url")
 
   // Forward to Copilot
+  const bearer = await getCopilotBearer(token)
   const headers = {
     "Content-Type": "application/json",
-    Authorization: `Bearer ${token}`,
+    Authorization: `Bearer ${bearer.token}`,
     "User-Agent": USER_AGENT,
     "x-initiator": "user",
     ...COPILOT_CLIENT_HEADERS,
@@ -1249,7 +1288,7 @@ async function handleRequest(req, res, token) {
 
     // ── Normal Path (no web search) ──
     const copilotRes = await fetch(
-      `${COPILOT_API_BASE}/chat/completions`,
+      `${bearer.api_base}/chat/completions`,
       {
         method: "POST",
         headers,
