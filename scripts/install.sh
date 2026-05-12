@@ -82,7 +82,7 @@ if [ -z "$CLAUDE_FOUND" ]; then
     # 国内访问 claude.ai 会被地区屏蔽（返回 HTML 错误页），
     # 探测下用户是否有可用代理，给出能直接复制粘贴的命令
     PROXY_HINT=""
-    for port in 7890 7891 6152 8001 1087; do
+    for port in 7890 7897 7891 7898 6152 8001 1087 10809; do
         if nc -z 127.0.0.1 "$port" 2>/dev/null; then
             PROXY_HINT="https_proxy=http://127.0.0.1:$port "
             break
@@ -170,9 +170,16 @@ if [ -n "$HTTPS_PROXY" ]; then
 elif [ -n "$https_proxy" ]; then
     UPSTREAM_PROXY="$https_proxy"
 fi
-# 没设的话，探测常见本地端口（ClashX/Mihomo 7890、Surge 6152、V2RayX 8001）
+# 没设的话，探测常见本地端口：
+# 7890 ClashX 经典 / Mihomo
+# 7897 Clash Verge / Clash Verge Rev（新版默认）
+# 7891/7898 ClashX socks / Verge socks
+# 6152 Surge
+# 8001 V2RayX
+# 1087 Privoxy / Shadowsocks-NG socks
+# 10809 V2RayN
 if [ -z "$UPSTREAM_PROXY" ]; then
-    for port in 7890 7891 6152 8001 1087; do
+    for port in 7890 7897 7891 7898 6152 8001 1087 10809; do
         if nc -z 127.0.0.1 "$port" 2>/dev/null; then
             UPSTREAM_PROXY="http://127.0.0.1:$port"
             echo "  → 自动探测到本地代理: $UPSTREAM_PROXY"
