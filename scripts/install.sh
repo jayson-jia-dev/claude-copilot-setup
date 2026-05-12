@@ -160,6 +160,11 @@ else
     node scripts/auth.mjs
     cd - > /dev/null
 fi
+# 强制 0600 权限，token 跟 SSH 私钥同级，绝不允许其它用户/组可读
+if [ -f "$AUTH_FILE" ]; then
+    chmod 600 "$AUTH_FILE"
+    echo "  ✓ token 文件权限锁定 0600"
+fi
 
 # ─── [4/8] 探测网络代理 ──────────────────────────────────────
 echo ""

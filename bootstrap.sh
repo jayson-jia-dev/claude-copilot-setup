@@ -17,8 +17,9 @@ echo "  Claude Code × GitHub Copilot bootstrap"
 echo "════════════════════════════════════════════════════════════"
 
 if [ -d "$REPO_DIR/.git" ]; then
-    echo "→ 已有 $REPO_DIR，拉取最新..."
-    git -C "$REPO_DIR" pull --rebase --autostash 2>&1 | tail -3
+    echo "→ 已有 $REPO_DIR，强制同步到最新（不用 rebase，避免本地手改引起的冲突）..."
+    git -C "$REPO_DIR" fetch --depth 1 origin main 2>&1 | tail -3
+    git -C "$REPO_DIR" reset --hard origin/main 2>&1 | tail -1
 else
     echo "→ 克隆到 $REPO_DIR"
     git clone --depth 1 "$REPO_URL" "$REPO_DIR"

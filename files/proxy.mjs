@@ -436,16 +436,29 @@ function mapModel(anthropicModel) {
   // 第 2 优先：硬编码表
   if (MODEL_MAP[anthropicModel]) return MODEL_MAP[anthropicModel]
 
-  // 第 3 优先：模式匹配兜底（套餐特别古老 / 没跑过 detect-models.mjs 时）
+  // 第 3 优先：模式匹配兜底（detect-models 没跑 / 没写入时）
+  // 兜底统一使用 "本仓库实测在 Business 套餐上能用的最高版本"
   const m = anthropicModel.toLowerCase()
-  if (m.includes("opus") && (m.includes("4.7") || m.includes("4-7"))) return "claude-opus-4.6"
-  if (m.includes("opus") && (m.includes("4.6") || m.includes("4-6"))) return "claude-opus-4.6"
-  if (m.includes("sonnet") && (m.includes("4.5") || m.includes("4-5"))) return "claude-sonnet-4.5"
-  if (m.includes("sonnet")) return "claude-sonnet-4"
-  if (m.includes("opus") && (m.includes("4.5") || m.includes("4-5"))) return "claude-opus-4.5"
-  if (m.includes("opus") && (m.includes("4.1") || m.includes("4-1") || m.includes("41"))) return "claude-opus-41"
-  if (m.includes("haiku")) return "claude-sonnet-4.5"
-  if (m.includes("opus")) return "claude-opus-4.6"
+
+  // Opus 家族
+  if (m.includes("opus")) {
+    if (m.includes("4.1") || m.includes("4-1")) return "claude-opus-4.5"  // 4.1 是更旧的小版本，兜底到 4.5
+    if (m.includes("4.5") || m.includes("4-5")) return "claude-opus-4.5"
+    // 4.6 / 4.7 / 未知都兜底到 4.6（4.7 多数套餐不开放）
+    return "claude-opus-4.6"
+  }
+
+  // Sonnet 家族
+  if (m.includes("sonnet")) {
+    if (m.includes("4.5") || m.includes("4-5")) return "claude-sonnet-4.5"
+    // 4 / 4.6 / 4.7 / 未知都兜底到 4.6（注意：claude-sonnet-4 是远古版本，绝大多数套餐没有）
+    return "claude-sonnet-4.6"
+  }
+
+  // Haiku 家族（修复了 Copilot-Integration-Id 之后实测 200，不再需要兜底成 sonnet）
+  if (m.includes("haiku")) {
+    return "claude-haiku-4.5"
+  }
 
   return anthropicModel
 }

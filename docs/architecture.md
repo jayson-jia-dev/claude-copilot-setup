@@ -45,25 +45,40 @@
 
 ### 1. 代理脚本 `proxy.mjs`
 
-源自 `samarth777/claude-code-copilot`，做了两处本地修改：
+源自 `samarth777/claude-code-copilot`，做了三处本地修改：
 
-**修改 1：Opus 4.7 模型映射**
+**修改 1：补 VSCode Copilot Chat client header**
+
+原版只发 `Authorization` 和 `User-Agent`，Copilot 后端把它识别成 `copilot-language-server` 通道（权限受限）。补上：
 ```js
-// 原版没有 4.7 条目，会走 fallback → claude-opus-4.6
-// 但当前 Business 套餐：4.7 返回 model_not_supported（API 列表里有但实际禁用），
-// 4.6 反而能用。所以显式映射 4.7 → 4.6 兜底。
-"claude-opus-4-7": "claude-opus-4.6",
-"claude-opus-4-7-latest": "claude-opus-4.6",
-"claude-opus-4-7[1m]": "claude-opus-4.6",
+const COPILOT_CLIENT_HEADERS = {
+  "Copilot-Integration-Id": "vscode-chat",
+  "Editor-Version": "vscode/1.110.1",
+  "Editor-Plugin-Version": "copilot-chat/0.38.2",
+  "x-github-api-version": "2025-10-01",
+  "Openai-Intent": "conversation-agent",
+}
+```
+被识别为 `vscode-chat` 通道后，权限范围明显扩大（例如 Haiku 从 403 变 200）。
+
+**修改 2：实测覆盖优先级**
+
+每次安装跑 `detect-models.mjs` 探测当前 Copilot 套餐能用的最高级模型，写到
+`~/.claude-copilot-models.json`。proxy 启动时加载，优先于硬编码 MODEL_MAP：
+```js
+let USER_MODEL_OVERRIDES = null
+if (existsSync(USER_MODELS_FILE)) {
+  USER_MODEL_OVERRIDES = JSON.parse(readFileSync(USER_MODELS_FILE, "utf8"))
+}
 ```
 
-**修改 2：Haiku 兜底成 Sonnet**
-```js
-// Business 套餐对 haiku 返回 403 forbidden（ToS 政策）。
-// Claude Code 后台任务大量用 haiku，必须兜底，否则后台任务全挂。
-"claude-haiku-4-5": "claude-sonnet-4.5",
-// ...其它 haiku 别名同理
+**修改 3：mapModel 三级优先级**
+
 ```
+USER_MODEL_OVERRIDES (实测)  >  MODEL_MAP (硬编码精确版本)  >  模式匹配 fallback
+```
+fallback 已校正：sonnet 系列默认兜底到 4.6（不是远古的 sonnet-4），opus 兜底到 4.6，
+haiku 兜底到 4.5 自身。
 
 ### 2. launchd 服务 `com.jayson.claude-copilot-proxy.plist`
 
@@ -71,7 +86,7 @@ macOS 原生进程管理器，等价于 Linux 的 systemd user unit。配置要�
 
 - `RunAtLoad: true` → 开机自启
 - `KeepAlive: true` → 进程崩了自动重启
-- `EnvironmentVariables` → 注入 `HTTPS_PROXY=http://127.0.0.1:7890` 让代理走 ClashX
+- `EnvironmentVariables` → install.sh 探测系统代理后注入 `HTTPS_PROXY`，让代理拉 Copilot token 时也能走梯子（国内必需）
 - `StandardOutPath / StandardErrorPath` → 日志重定向到 `~/Library/Logs/`
 
 **为什么不用 Docker**：装 Docker Desktop 太重（几百 MB 内存常驻），就为跑一个 Node 进程。launchd 是 macOS 自带的，零开销、零依赖、API 稳定 20 年。
