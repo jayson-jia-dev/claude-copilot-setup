@@ -139,12 +139,40 @@ claude-copilot-setup/
 # 看 error.message 里的 "Available models: [...]" 列表
 ```
 
+## 国内同事用 `claude`（订阅路径）的坑
+
+`claude-cp` 走 localhost 代理 → Copilot，**不依赖**外网到 Anthropic。
+但如果同事还想顺便用 `claude`（走他自己的订阅），就需要让 `claude` 命令也走梯子。
+
+install.sh 探测到本地代理时会**自动**往 `~/.zshrc` 写：
+```bash
+export HTTPS_PROXY="http://127.0.0.1:7890"  # 端口按实测改
+export HTTP_PROXY="http://127.0.0.1:7890"
+export NO_PROXY="localhost,127.0.0.1,*.local"
+```
+
+**⚠ 关键警告**：检查梯子的「直连规则 / Bypass List / 绕过域名」，
+**严禁**把以下域名加到绕过列表：
+
+- `*.anthropic.com`
+- `api.anthropic.com`
+- `claude.ai`
+- `*.claude.com`
+
+Claude Code 必须**完整**走代理。某些梯子的预设规则会把"AI/办公"类域名当国内业务走直连，
+导致 Claude Code 自检请求被 GFW 拦截，报"App unavailable in region"。
+这是踩过的坑，**直连模式必死**。
+
+ClashX 的话，打开「编辑配置文件」搜 `anthropic` 或 `claude`，
+有任何 `DIRECT` 规则全改成走代理。
+
 ## 不要做的事
 
 - ❌ 不要用 cc-switch 的 Copilot profile（已知 bug，看 `docs/known-issues.md`）
 - ❌ 不要打开 cc-switch 的「启用本地路由」全局开关
 - ❌ 不要把 token 文件提交到 git
 - ❌ 不要跑 `claude /logout`（会清掉订阅 Keychain，所有 Claude Code 窗口一起死）
+- ❌ 不要在梯子的直连规则里加 *.anthropic.com（见上面警告）
 
 ## 参考
 

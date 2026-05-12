@@ -235,6 +235,28 @@ else
     echo "  ✓ 辅助 alias 已追加"
 fi
 
+# 让 `claude`（订阅路径）也能走代理 — 否则国内用户 claude 直接报地区屏蔽
+# claude-cp 不依赖这个（走 localhost），但 claude 直连 api.anthropic.com 必须有
+if [ -n "$UPSTREAM_PROXY" ]; then
+    if grep -qE "^export[[:space:]]+HTTPS_PROXY=" "$HOME/.zshrc" 2>/dev/null; then
+        echo "  ⚠ ~/.zshrc 里已有 HTTPS_PROXY 配置，跳过（不覆盖用户设置）"
+    else
+        {
+            echo ''
+            echo '# Claude Code 订阅路径（claude 命令）走系统代理'
+            echo "# 由 claude-copilot-setup 安装器探测后追加 (端口: ${UPSTREAM_PROXY##*:})"
+            echo "export HTTPS_PROXY=\"${UPSTREAM_PROXY}\""
+            echo "export HTTP_PROXY=\"${UPSTREAM_PROXY}\""
+            echo 'export NO_PROXY="localhost,127.0.0.1,*.local"'
+        } >> "$HOME/.zshrc"
+        echo "  ✓ HTTPS_PROXY 已追加（让 \`claude\` 命令能直连 Anthropic）"
+        echo ""
+        echo "  ⚠ 重要：检查你梯子的「直连/绕过规则」"
+        echo "    严禁把 *.anthropic.com / claude.ai / api.claude.com 加到绕过列表"
+        echo "    Claude Code 必须**完整**走代理，否则一样会被地区屏蔽"
+    fi
+fi
+
 # ─── [8/8] 验证 ────────────────────────────────────────────────
 echo ""
 echo "[8/8] 验证代理可用性..."
