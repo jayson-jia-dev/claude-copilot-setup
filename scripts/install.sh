@@ -6,6 +6,9 @@
 # 不假设任何用户特定路径。所有依赖都从环境检测。
 #
 set -e
+# 强制 UTF-8，避免 curl|bash 时某些 shell 的 LANG=C 把中文显示成乱码
+export LANG="${LANG:-en_US.UTF-8}"
+export LC_ALL="${LC_ALL:-en_US.UTF-8}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PKG_DIR="$(dirname "$SCRIPT_DIR")"
@@ -29,17 +32,42 @@ echo "  ✓ node: $NODE_VER ($NODE_BIN)"
 # 自动找一个 ≥ 2.1.130 的 claude，没有就提示用户装
 MIN_CLAUDE="2.1.130"
 CLAUDE_FOUND=""
-for c in \
-    "$HOME/.local/bin/claude" \
-    $(ls -d "$HOME"/.nvm/versions/node/*/bin/claude 2>/dev/null | sort -rV) \
-    "/opt/homebrew/bin/claude" \
-    "$(command -v claude 2>/dev/null)" \
-    "/usr/local/bin/claude"
-do
+CLAUDE_SCANNED=""  # 调试用：记录扫过哪些版本，失败时打印出来给同事看
+
+# 候选路径合集（从最权威到最兜底）
+CANDIDATES=(
+    "$HOME/.local/bin/claude"                    # Anthropic 官方安装器
+    "$HOME/.bun/bin/claude"                      # Bun 全局
+    "/opt/homebrew/bin/claude"                   # Apple Silicon Homebrew / npm
+    "/usr/local/bin/claude"                      # Intel Homebrew / 老 npm
+    "$HOME/.volta/bin/claude"                    # Volta
+    "$HOME/.config/yarn/global/node_modules/.bin/claude"  # Yarn 全局
+    "$(command -v claude 2>/dev/null)"           # PATH 兜底
+)
+# nvm 各版本（多个 node 版本可能各自装了一份）
+if [ -d "$HOME/.nvm/versions/node" ]; then
+    while IFS= read -r p; do
+        CANDIDATES+=("$p")
+    done < <(ls -d "$HOME"/.nvm/versions/node/*/bin/claude 2>/dev/null | sort -rV)
+fi
+# fnm / n 等其它 node 管理器
+for p in "$HOME"/.fnm/node-versions/*/installation/bin/claude \
+         "$HOME"/.n/bin/claude \
+         "$HOME"/.asdf/installs/nodejs/*/.npm/bin/claude; do
+    [ -x "$p" ] && CANDIDATES+=("$p")
+done
+
+seen=""
+for c in "${CANDIDATES[@]}"; do
     [ -z "$c" ] && continue
     [ -x "$c" ] || continue
+    case ":$seen:" in *":$c:"*) continue ;; esac  # 去重
+    seen="$seen:$c"
+
     ver=$("$c" --version 2>/dev/null | awk '{print $1}')
     [ -z "$ver" ] && continue
+    CLAUDE_SCANNED="${CLAUDE_SCANNED}    $c → $ver"$'\n'
+
     if printf '%s\n%s\n' "$MIN_CLAUDE" "$ver" | sort -V -C 2>/dev/null; then
         echo "  ✓ claude: $ver ($c)"
         CLAUDE_FOUND="$c"
@@ -56,7 +84,16 @@ if [ -z "$CLAUDE_FOUND" ]; then
             break
         fi
     done
-    echo "  ⚠ 未找到 Claude Code >= $MIN_CLAUDE。装一个："
+    echo "  ⚠ 未找到 Claude Code >= ${MIN_CLAUDE}"
+    if [ -n "$CLAUDE_SCANNED" ]; then
+        echo ""
+        echo "  扫到的 claude（但版本都太老）："
+        printf '%s' "$CLAUDE_SCANNED"
+    else
+        echo "  系统里完全没找到 claude 二进制。"
+    fi
+    echo ""
+    echo "  装一个 / 升级到最新："
     echo ""
     echo "    国外网络："
     echo "      curl -fsSL https://claude.ai/install.sh | bash"
@@ -70,9 +107,14 @@ if [ -z "$CLAUDE_FOUND" ]; then
     fi
     echo ""
     echo "    或者通过 npm（如果 npm registry 可达）："
-    echo "      npm i -g @anthropic-ai/claude-code"
+    echo "      npm i -g @anthropic-ai/claude-code@latest --registry=https://registry.npmjs.org/"
     echo ""
-    echo "    装完重开终端再跑这个安装器。"
+    echo "    装完**重开终端**再跑这个安装器。"
+    echo ""
+    echo "  如果你确信装过最新版但还是被这里拒绝，请贴这三行给配置作者："
+    echo "    command -v claude"
+    echo "    claude --version"
+    echo "    ls -la \$(command -v claude)"
     exit 1
 fi
 
