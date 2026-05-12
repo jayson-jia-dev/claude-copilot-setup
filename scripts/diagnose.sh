@@ -1,77 +1,241 @@
 #!/usr/bin/env bash
-# 诊断 token 为什么调 Copilot 失败
-# 用法: curl -fsSL https://raw.githubusercontent.com/jayson-jia-dev/claude-copilot-setup/main/scripts/diagnose.sh | bash
-
-set -e
+#
+# 一键全面诊断 — Claude × Copilot Setup
+#
+# 用法:
+#   bash ~/claude-copilot-setup/scripts/diagnose.sh
+#
+# 输出全部贴回去就够定位问题，不用再来回问。
+#
+set +e
 
 AUTH_FILE="$HOME/.claude-copilot-auth.json"
+MODELS_FILE="$HOME/.claude-copilot-models.json"
+PROXY_DIR="$HOME/claude-code-copilot"
+PLIST="$HOME/Library/LaunchAgents/com.jayson.claude-copilot-proxy.plist"
+OUT_LOG="$HOME/Library/Logs/claude-copilot-proxy.out.log"
+ERR_LOG="$HOME/Library/Logs/claude-copilot-proxy.err.log"
+SETUP_DIR="$HOME/claude-copilot-setup"
 
-echo "════════════════════════════════════════════════════════"
-echo "  Claude × Copilot Token 诊断"
-echo "════════════════════════════════════════════════════════"
-echo ""
+section() { echo ""; echo "════════════════════════════════════════════════════════"; echo "  $1"; echo "════════════════════════════════════════════════════════"; }
+sub() { echo ""; echo "── $1 ──"; }
 
-# ─── Step 1: token 基本信息 ──────────────────────────────────
-echo "[1] Token 基本信息"
-if [ ! -f "$AUTH_FILE" ]; then
-    echo "  ❌ 不存在 $AUTH_FILE，先跑 install.sh"
-    exit 1
+# ──────────────────────────────────────────────────────────
+section "Claude × Copilot 全面诊断"
+echo "执行时间: $(date '+%Y-%m-%d %H:%M:%S %z')"
+echo "主机名  : $(hostname)"
+echo "macOS   : $(sw_vers -productVersion 2>/dev/null) ($(uname -m))"
+
+# ──────────────────────────────────────────────────────────
+section "[1] 安装包版本"
+sub "本地仓库 commit"
+if [ -d "$SETUP_DIR/.git" ]; then
+    git -C "$SETUP_DIR" log -1 --pretty='  %h %s (%ar)'
+else
+    echo "  ⚠ $SETUP_DIR 不是 git 仓库或不存在"
 fi
 
-TOKEN=$(python3 -c "import json; print(json.load(open('$AUTH_FILE'))['access_token'])")
-echo "  prefix: ${TOKEN:0:8}..."
-echo "  长度  : ${#TOKEN}"
+sub "proxy.mjs 关键功能开关（看代码是否更到最新）"
+PROXY_FILE="$PROXY_DIR/scripts/proxy.mjs"
+if [ -f "$PROXY_FILE" ]; then
+    has_token_exchange=$(grep -c "getCopilotBearer\|/copilot_internal/v2/token" "$PROXY_FILE")
+    has_client_hdrs=$(grep -c "COPILOT_CLIENT_HEADERS" "$PROXY_FILE")
+    has_user_overrides=$(grep -c "USER_MODEL_OVERRIDES" "$PROXY_FILE")
+    echo "  token 换发逻辑 (getCopilotBearer)   : $has_token_exchange (期望 ≥ 3)"
+    echo "  VSCode client headers              : $has_client_hdrs (期望 ≥ 2)"
+    echo "  实测覆盖加载 (USER_MODEL_OVERRIDES) : $has_user_overrides (期望 ≥ 2)"
+else
+    echo "  ⚠ $PROXY_FILE 不存在 — 没跑过 install.sh？"
+fi
 
-# ─── Step 2: 验证 token 是谁 ──────────────────────────────────
-echo ""
-echo "[2] Token 对应的 GitHub 账号"
-USER_INFO=$(curl -s -H "Authorization: token $TOKEN" https://api.github.com/user)
-echo "  login : $(echo "$USER_INFO" | python3 -c "import sys,json; print(json.load(sys.stdin).get('login','??'))")"
-echo "  id    : $(echo "$USER_INFO" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id','??'))")"
+# ──────────────────────────────────────────────────────────
+section "[2] Token 信息"
+if [ ! -f "$AUTH_FILE" ]; then
+    echo "❌ 不存在 $AUTH_FILE，先跑 install.sh"
+    TOKEN=""
+else
+    TOKEN=$(python3 -c "import json; print(json.load(open('$AUTH_FILE'))['access_token'])" 2>/dev/null)
+    echo "  文件   : $AUTH_FILE"
+    echo "  权限   : $(stat -f '%Sp %Su:%Sg' "$AUTH_FILE")"
+    echo "  prefix : ${TOKEN:0:8}..."
+    echo "  长度   : ${#TOKEN}"
 
-# ─── Step 3: OAuth Scope 与 Client ───────────────────────────
-echo ""
-echo "[3] Token OAuth scope 和 client id（决定 Copilot 权限的关键）"
-HEADERS=$(curl -sI -H "Authorization: token $TOKEN" https://api.github.com/user)
-echo "$HEADERS" | grep -i '^x-oauth-scopes:' | sed 's/^/  /'
-echo "$HEADERS" | grep -i '^x-oauth-client-id:' | sed 's/^/  /'
-echo "$HEADERS" | grep -i '^x-accepted-oauth-scopes:' | sed 's/^/  /'
+    sub "Token 对应 GitHub 账号"
+    USER_JSON=$(curl -s -H "Authorization: token $TOKEN" https://api.github.com/user)
+    echo "  $USER_JSON" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+print(f\"  login : {d.get('login','??')}\")
+print(f\"  id    : {d.get('id','??')}\")
+print(f\"  name  : {d.get('name','??')}\")
+" 2>/dev/null
 
-# ─── Step 4: 直接调 Copilot Chat 试试 ────────────────────────
-echo ""
-echo "[4] 直调 Copilot /chat/completions (走 HTTPS_PROXY=${HTTPS_PROXY:-<无>})"
-RESP=$(curl -s -o /tmp/copilot-diag-body.json -w "%{http_code}" \
-    -X POST https://api.githubcopilot.com/chat/completions \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "Content-Type: application/json" \
-    -H "Copilot-Integration-Id: vscode-chat" \
-    -H "Editor-Version: vscode/1.110.1" \
-    -H "Editor-Plugin-Version: copilot-chat/0.38.2" \
-    -H "x-github-api-version: 2025-10-01" \
-    -H "User-Agent: GitHubCopilotChat/0.38.2" \
-    -H "x-initiator: user" \
-    -d '{"model":"claude-sonnet-4.5","max_tokens":5,"messages":[{"role":"user","content":"hi"}]}' \
-    --max-time 15 2>&1)
-echo "  HTTP $RESP"
-echo "  body: $(head -c 300 /tmp/copilot-diag-body.json)"
-echo ""
-rm -f /tmp/copilot-diag-body.json
+    sub "OAuth scope / client id"
+    curl -sI -H "Authorization: token $TOKEN" https://api.github.com/user \
+        | grep -iE '^x-oauth-scopes:|^x-oauth-client-id:|^x-accepted-oauth-scopes:' \
+        | sed 's/^/  /'
+fi
 
-# ─── Step 5: 内部 token 换发端点是否可达 ─────────────────────
-echo ""
-echo "[5] /copilot_internal/v2/token 是否可达"
-INT_RESP=$(curl -s -o /tmp/copilot-int-body.json -w "%{http_code}" \
-    -H "Authorization: token $TOKEN" \
-    -H "User-Agent: GitHubCopilotChat/0.38.2" \
-    -H "Editor-Version: vscode/1.110.1" \
-    -H "Editor-Plugin-Version: copilot-chat/0.38.2" \
-    https://api.github.com/copilot_internal/v2/token \
-    --max-time 10 2>&1)
-echo "  HTTP $INT_RESP"
-echo "  body: $(head -c 300 /tmp/copilot-int-body.json)"
-rm -f /tmp/copilot-int-body.json
+# ──────────────────────────────────────────────────────────
+section "[3] /copilot_internal/v2/token 短期 Bearer 换发"
+if [ -n "$TOKEN" ]; then
+    EXCHANGE_BODY=$(curl -s -w "\n__HTTP_STATUS__%{http_code}__" \
+        -H "Authorization: token $TOKEN" \
+        -H "Copilot-Integration-Id: vscode-chat" \
+        -H "Editor-Version: vscode/1.110.1" \
+        -H "Editor-Plugin-Version: copilot-chat/0.38.2" \
+        -H "User-Agent: GitHubCopilotChat/0.38.2" \
+        https://api.github.com/copilot_internal/v2/token \
+        --max-time 10)
+    EXCHANGE_STATUS=$(echo "$EXCHANGE_BODY" | grep -oE '__HTTP_STATUS__[0-9]+__' | tr -d '_HTPSAU')
+    EXCHANGE_BODY=$(echo "$EXCHANGE_BODY" | sed 's|__HTTP_STATUS__[0-9]*__||')
+    echo "  HTTP $EXCHANGE_STATUS"
+    if [ "$EXCHANGE_STATUS" = "200" ]; then
+        echo "$EXCHANGE_BODY" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+print(f\"  chat_enabled        : {d.get('chat_enabled')}\")
+print(f\"  copilot_plan        : {d.get('copilot_plan','??')}\")
+print(f\"  organization_list   : {d.get('organization_list', [])}\")
+print(f\"  endpoints.api       : {d.get('endpoints',{}).get('api','??')}\")
+print(f\"  endpoints.proxy     : {d.get('endpoints',{}).get('proxy','??')}\")
+print(f\"  expires_at          : {d.get('expires_at','??')}\")
+tid = d.get('token','')
+print(f\"  token prefix        : {tid[:20]}...\")
 
+# 把 tid 和 api 写到临时文件给后面用
+with open('/tmp/copilot-diag.env', 'w') as f:
+    f.write(f\"TID={tid}\nAPI_BASE={d.get('endpoints',{}).get('api','https://api.githubcopilot.com')}\n\")
+"
+    else
+        echo "  body: $(echo "$EXCHANGE_BODY" | head -c 300)"
+    fi
+fi
+
+# ──────────────────────────────────────────────────────────
+section "[4] Copilot Chat 实测各模型可用性"
+if [ -f /tmp/copilot-diag.env ]; then
+    source /tmp/copilot-diag.env
+    echo "  endpoint: $API_BASE"
+    echo ""
+    for MODEL in "claude-opus-4.7" "claude-opus-4.6" "claude-opus-4.5" \
+                 "claude-sonnet-4.6" "claude-sonnet-4.5" "claude-haiku-4.5" "gpt-4o"; do
+        STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "$API_BASE/chat/completions" \
+            -H "Authorization: Bearer $TID" \
+            -H "Content-Type: application/json" \
+            -H "Copilot-Integration-Id: vscode-chat" \
+            -H "Editor-Version: vscode/1.110.1" \
+            -H "Editor-Plugin-Version: copilot-chat/0.38.2" \
+            -H "x-github-api-version: 2025-10-01" \
+            -H "User-Agent: GitHubCopilotChat/0.38.2" \
+            -H "x-initiator: user" \
+            -d "{\"model\":\"$MODEL\",\"max_tokens\":5,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}" \
+            --max-time 15)
+        case "$STATUS" in
+            200) MARK="✓" ;;
+            400) MARK="✗ model_not_supported" ;;
+            403) MARK="✗ forbidden (TOS / rate)" ;;
+            429) MARK="✗ rate_limited" ;;
+            *)   MARK="✗" ;;
+        esac
+        echo "  $MODEL → HTTP $STATUS $MARK"
+        sleep 0.5  # 间隔避免限流
+    done
+    rm -f /tmp/copilot-diag.env
+else
+    echo "  跳过（步骤 3 换发 token 失败）"
+fi
+
+# ──────────────────────────────────────────────────────────
+section "[5] 实测模型映射文件"
+if [ -f "$MODELS_FILE" ]; then
+    cat "$MODELS_FILE" | sed 's/^/  /'
+else
+    echo "  ⚠ $MODELS_FILE 不存在（detect-models 没成功跑过）"
+fi
+
+# ──────────────────────────────────────────────────────────
+section "[6] launchd 服务状态"
+sub "service 在不在 launchd 里"
+launchctl list 2>/dev/null | grep claude-copilot-proxy | sed 's/^/  /'
+
+sub "端口监听"
+lsof -nP -iTCP:18080 -sTCP:LISTEN 2>/dev/null | sed 's/^/  /'
+
+sub "plist 文件"
+if [ -f "$PLIST" ]; then
+    echo "  ✓ $PLIST"
+    # 检查 plist 里 HTTPS_PROXY 设置
+    grep -A1 "HTTPS_PROXY" "$PLIST" | grep -A1 "<string>" | head -2 | sed 's/^/    /'
+else
+    echo "  ⚠ $PLIST 不存在"
+fi
+
+# ──────────────────────────────────────────────────────────
+section "[7] 走 proxy 实测（端到端）"
+if lsof -nP -iTCP:18080 -sTCP:LISTEN >/dev/null 2>&1; then
+    echo "  对 proxy 18080 发请求，模型 claude-opus-4-7..."
+    PROXY_RESP=$(curl -s -X POST http://localhost:18080/v1/messages \
+        -H "Content-Type: application/json" \
+        -H "anthropic-version: 2023-06-01" \
+        -H "x-api-key: copilot-proxy" \
+        -d '{"model":"claude-opus-4-7","max_tokens":10,"messages":[{"role":"user","content":"reply: ok"}]}' \
+        --max-time 25 -w "\n__HTTP_STATUS__%{http_code}__")
+    PROXY_STATUS=$(echo "$PROXY_RESP" | grep -oE '__HTTP_STATUS__[0-9]+__' | tr -d '_HTPSAU')
+    PROXY_BODY=$(echo "$PROXY_RESP" | sed 's|__HTTP_STATUS__[0-9]*__||')
+    echo "  HTTP $PROXY_STATUS"
+    echo "  body: $(echo "$PROXY_BODY" | head -c 300)"
+else
+    echo "  ⚠ proxy 没在 18080 监听，跳过端到端测"
+fi
+
+# ──────────────────────────────────────────────────────────
+section "[8] proxy 日志最近 40 行 (out)"
+if [ -f "$OUT_LOG" ]; then
+    tail -40 "$OUT_LOG" | sed 's/^/  /'
+else
+    echo "  ⚠ 没有 out 日志"
+fi
+
+sub "proxy 日志最近 20 行 (err)"
+if [ -f "$ERR_LOG" ]; then
+    tail -20 "$ERR_LOG" | sed 's/^/  /'
+else
+    echo "  ⚠ 没有 err 日志"
+fi
+
+# ──────────────────────────────────────────────────────────
+section "[9] 网络代理状态"
+echo "  HTTPS_PROXY (env)  : ${HTTPS_PROXY:-<未设置>}"
+echo "  https_proxy (env)  : ${https_proxy:-<未设置>}"
+echo "  NO_PROXY (env)     : ${NO_PROXY:-<未设置>}"
+
+sub "本地代理端口扫描"
+for PORT in 7890 7891 7897 7898 6152 8001 1087 10809; do
+    if nc -z 127.0.0.1 "$PORT" 2>/dev/null; then
+        echo "  ✓ $PORT 在监听"
+    fi
+done
+
+# ──────────────────────────────────────────────────────────
+section "[10] Claude Code 客户端"
+sub "wrapper"
+if [ -f "$HOME/.local/bin/claude-cp" ]; then
+    echo "  ✓ $HOME/.local/bin/claude-cp ($(stat -f '%Sp' $HOME/.local/bin/claude-cp))"
+else
+    echo "  ⚠ 没装 wrapper"
+fi
+
+sub "PATH 上的 claude（wrapper 实际会用的）"
+for cand in "$HOME/.local/bin/claude" "$HOME/.bun/bin/claude" "/opt/homebrew/bin/claude" "/usr/local/bin/claude" $(ls -d "$HOME"/.nvm/versions/node/*/bin/claude 2>/dev/null); do
+    if [ -x "$cand" ]; then
+        ver=$("$cand" --version 2>/dev/null | head -1)
+        echo "  $cand → $ver"
+    fi
+done
+
+# ──────────────────────────────────────────────────────────
+section "诊断结束"
+echo "完整输出全部贴回去，对照 [4] 模型实测和 [7] 端到端、[8] 日志即可定位。"
 echo ""
-echo "════════════════════════════════════════════════════════"
-echo "  诊断完成。把上面全部输出贴回去对比"
-echo "════════════════════════════════════════════════════════"
