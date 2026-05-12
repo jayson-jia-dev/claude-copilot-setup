@@ -29,12 +29,11 @@ NODE_DIR="$(dirname "$NODE_BIN")"
 NODE_VER="$(node --version)"
 echo "  ✓ node: $NODE_VER ($NODE_BIN)"
 
-# 自动找一个版本足够新的 claude
-# 2.1.100 是实测能稳定支持 ANTHROPIC_BASE_URL 的下限（v2.1.81 确认不行，
-# 中间没逐版本测，2.1.100 保守一点）
-# 注意：Homebrew 的 claude-code formula 经常滞后官方两三周，
-#       brew "latest" 不等于 Anthropic latest
-MIN_CLAUDE="2.1.100"
+# 找一个 claude 二进制（仅作 sanity check 排除 v1.x/v0.x）
+# 之前定 2.1.130 是经验主义猜测——实测发现 v2.1.81 失败的根因是
+# HTTPS_PROXY 缺失（Claude 启动 health check 直连 api.anthropic.com 被 GFW 拦），
+# 跟 BASE_URL 支持无关。所以版本门没必要太严。
+MIN_CLAUDE="2.0.0"
 CLAUDE_FOUND=""
 CLAUDE_SCANNED=""  # 调试用：记录扫过哪些版本，失败时打印出来给同事看
 

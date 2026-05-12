@@ -9,7 +9,9 @@
 set -e
 
 PROXY_URL="${COPILOT_PROXY_URL:-http://localhost:18080}"
-MIN_VERSION="2.1.130"
+# 仅作 sanity check 排除 v1.x / v0.x，真正的版本兼容性靠运行时表现
+# （历史上 v2.1.81 失败的根因是 HTTPS_PROXY 缺失，不是不支持 BASE_URL）
+MIN_VERSION="2.0.0"
 
 # ─── 版本比较 ────────────────────────────────────────────────
 # 返回 0 表示 $1 >= $2
@@ -58,13 +60,15 @@ find_claude() {
 
 CLAUDE_BIN=$(find_claude) || {
     cat >&2 <<EOF
-❌ 找不到 Claude Code >= ${MIN_VERSION}
+❌ 系统里找不到 Claude Code 二进制
 
-老版本不支持 ANTHROPIC_BASE_URL 环境变量，没法走代理。
-解决方法：
-  方法 A（推荐）：curl -fsSL https://claude.ai/install.sh | bash
-  方法 B：npm i -g @anthropic-ai/claude-code
-  装完后重开终端再跑 claude-cp。
+装一个：
+  国外：curl -fsSL https://claude.ai/install.sh | bash
+  国内（按你梯子改端口）：
+    https_proxy=http://127.0.0.1:7890 curl -fsSL https://claude.ai/install.sh | bash
+  或 npm: npm i -g @anthropic-ai/claude-code@latest --registry=https://registry.npmjs.org/
+
+装完重开终端再跑 claude-cp。
 
 诊断你机器上的现有版本：
   for f in \$HOME/.local/bin/claude /usr/local/bin/claude /opt/homebrew/bin/claude; do
