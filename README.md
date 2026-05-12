@@ -24,6 +24,25 @@ HTTPS_PROXY=http://127.0.0.1:7890 git clone https://github.com/jayson-jia-dev/cl
 > 前置依赖：Node 18+、git、Claude Code (>= 2.1.130)、GitHub Copilot 订阅。
 > Claude Code 装法见下方「装 Claude Code」一节。
 
+## ⚠ 关于模型版本：界面显示 vs 实际使用
+
+Claude Code 顶部 banner 会显示 `Opus 4.7 (1M context) · API Usage Billing`，
+**但这只是客户端自己的标签，是个假象**。
+
+实际发到 Copilot 的请求被本地代理改写成 `claude-opus-4.6`：
+- Copilot Business 套餐里 4.7 返回 `model_not_supported`（API 列表说有但实际禁用）
+- 4.6 反而能用（虽然 API 列表里没列），是当前可用的最高版本
+
+想看实际用的哪个模型，跑 `claude-cp-log`，看 `→` 右边那个名字：
+```
+→ claude-opus-4-7 → claude-opus-4.6 | stream ...
+                    ↑ 实际跑的是这个
+```
+
+如果对模型有要求（重推理任务必须用 4.7），就跑 `claude` 走订阅而非 `claude-cp`。
+
+---
+
 ## 首次启动 `claude-cp` 会问三个对话框
 
 **对话框 ① — 必看必选**
