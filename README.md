@@ -24,6 +24,33 @@ HTTPS_PROXY=http://127.0.0.1:7890 git clone https://github.com/jayson-jia-dev/cl
 > 前置依赖：Node 18+、git、Claude Code (>= 2.1.130)、GitHub Copilot 订阅。
 > Claude Code 装法见下方「装 Claude Code」一节。
 
+## 首次启动 `claude-cp` 会问两个对话框
+
+**对话框 ① — 必看必选**
+
+```
+Detected a custom API key in your environment
+ANTHROPIC_API_KEY: sk-ant-...copilot-proxy
+Do you want to use this API key?
+  > 1. Yes
+    2. No (recommended)   ← 默认选这个，要手动切到 1
+```
+
+→ **必须选 1. Yes**。我们就是故意用这个 key（实际上是个占位符）走本地代理的。
+默认那个 "No (recommended)" 是 Claude Code 的通用建议，对我们这套场景不适用。
+
+**对话框 ② — 随便选**
+
+```
+Use Claude Code's terminal setup?
+For the optimal coding experience...
+  > 1. Yes, use recommended settings
+    2. No, maybe later with /terminal-setup
+```
+
+→ **任选都行**。这跟 Copilot 通路无关，只是 Claude Code 自身的终端体验偏好（Option+Enter 换行、视觉提醒）。
+选 Yes 改终端配置，选 No 保持默认，将来想改随时 `/terminal-setup`。
+
 安装脚本做的事（**全自动检测，无任何用户特定路径**）：
 - 检查 node / git / claude 是否满足最低版本
 - 克隆代理仓库到 `~/claude-code-copilot/`
