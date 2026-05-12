@@ -24,7 +24,7 @@ HTTPS_PROXY=http://127.0.0.1:7890 git clone https://github.com/jayson-jia-dev/cl
 > 前置依赖：Node 18+、git、Claude Code (>= 2.1.130)、GitHub Copilot 订阅。
 > Claude Code 装法见下方「装 Claude Code」一节。
 
-## 首次启动 `claude-cp` 会问两个对话框
+## 首次启动 `claude-cp` 会问三个对话框
 
 **对话框 ① — 必看必选**
 
@@ -39,7 +39,19 @@ Do you want to use this API key?
 → **必须选 1. Yes**。我们就是故意用这个 key（实际上是个占位符）走本地代理的。
 默认那个 "No (recommended)" 是 Claude Code 的通用建议，对我们这套场景不适用。
 
-**对话框 ② — 随便选**
+**对话框 ② — 工作目录信任**
+
+```
+Accessing workspace: /Users/你的用户名
+Quick safety check: Is this a project you created or one you trust?
+  > 1. Yes, I trust this folder
+    2. No, exit
+```
+
+→ **选 1. Yes, I trust this folder**。你在自己电脑自己 home 目录下，安全的。
+选 No 会直接退出 Claude Code。Claude 这个提示是为了防止你在恶意仓库里跑它误操作文件。
+
+**对话框 ③ — 终端体验，随便选**
 
 ```
 Use Claude Code's terminal setup?
