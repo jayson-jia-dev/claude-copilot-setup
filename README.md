@@ -3,13 +3,21 @@
 # claude-copilot-setup
 
 **用你的 GitHub Copilot 订阅跑 Claude Code**
+*Run Claude Code through your GitHub Copilot subscription — local proxy, zero Anthropic API cost.*
+
+[![Platform](https://img.shields.io/badge/platform-macOS-blue.svg)](#-局限--注意)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen.svg)](https://nodejs.org/)
+[![Claude Code](https://img.shields.io/badge/Claude%20Code-%E2%89%A52.0-orange.svg)](https://docs.anthropic.com/en/docs/claude-code)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#-贡献)
 
 让 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 借道你已经付过钱的 GitHub Copilot，无需 Anthropic API key、不烧 Anthropic 订阅 quota。
 
 [快速开始](#-快速开始) ·
 [原理](#-原理) ·
 [FAQ](#-faq) ·
-[踩坑实录](#-踩坑实录)
+[踩坑实录](#-踩坑实录) ·
+[升级 / 卸载](#-升级--卸载)
 
 </div>
 
@@ -112,6 +120,35 @@ HTTPS_PROXY=http://127.0.0.1:7890 curl -fsSL https://claude.ai/install.sh | bash
 | **Detected a custom API key** | **1. Yes**（默认是 No, recommended，要手动改）|
 | **Accessing workspace - Trust this folder** | **1. Yes, I trust this folder** |
 | **Use Claude Code's terminal setup** | 任选（与 Copilot 无关）|
+
+### 5. 验证装好了
+
+```bash
+# A. 服务有没有跑
+claude-cp-status
+# 期望看到：
+#   <PID>    0    com.jayson.claude-copilot-proxy
+#   node   <PID>   ... TCP *:18080 (LISTEN)
+
+# B. 端到端 smoke test（不开 Claude Code 也能跑）
+curl -s -X POST http://localhost:18080/v1/messages \
+  -H "Content-Type: application/json" \
+  -H "anthropic-version: 2023-06-01" \
+  -H "x-api-key: copilot-proxy" \
+  -d '{"model":"claude-sonnet-4-5","max_tokens":15,"messages":[{"role":"user","content":"reply: ok"}]}'
+# 期望返回:  {"id":"msg_...","content":[{"type":"text","text":"ok"}],...}
+
+# C. 看实测可用模型清单
+cat ~/.claude-copilot-models.json
+# 例: {"opus": "claude-opus-4.6", "sonnet": "claude-sonnet-4.6", "haiku": "claude-haiku-4.5"}
+
+# D. 看代理实时映射 Claude 请求
+claude-cp-log
+# Claude Code 跑起来后会看到:
+#   → claude-opus-4-7  → claude-opus-4.6  | stream | 5 messages
+```
+
+如果 A/B/C 任意一步不对，跳到 [踩坑实录](#-踩坑实录) 找相似症状。
 
 ---
 
@@ -287,12 +324,81 @@ alias 永远赢，wrapper 永远没机会跑。
 
 ---
 
+## 🔄 升级 / 卸载
+
+**升级到最新版本**：
+```bash
+# bootstrap 内置 'git pull --rebase'，重跑即升级
+curl -fsSL https://raw.githubusercontent.com/jayson-jia-dev/claude-copilot-setup/main/bootstrap.sh | bash
+```
+
+**只想重测套餐模型**（不重装其它）：
+```bash
+claude-cp-detect-models
+```
+
+**重新走 GitHub OAuth**（token 失效 / 换账号）：
+```bash
+rm ~/.claude-copilot-auth.json
+cd ~/claude-code-copilot && node scripts/auth.mjs
+claude-cp-restart
+```
+
+**完全卸载**：
+```bash
+# 1. 停 launchd 服务
+launchctl unload ~/Library/LaunchAgents/com.jayson.claude-copilot-proxy.plist
+rm ~/Library/LaunchAgents/com.jayson.claude-copilot-proxy.plist
+
+# 2. 删代理代码 + token + 实测映射
+rm -rf ~/claude-code-copilot ~/claude-copilot-setup
+rm ~/.claude-copilot-auth.json ~/.claude-copilot-models.json
+
+# 3. 删 wrapper + 日志
+rm ~/.local/bin/claude-cp
+rm ~/Library/Logs/claude-copilot-proxy.{out,err}.log
+
+# 4. 手动从 ~/.zshrc 删掉 claude-cp 相关 alias 和 PATH 那几行
+#    （install.sh 加的注释 '# Claude Code × Copilot 辅助 alias' 那段）
+
+# 5. （可选）按需保留 Anthropic 订阅路径用的 HTTPS_PROXY
+#    那几行不是本项目专用，国内访问 claude.ai 还需要它
+```
+
+`claude` 命令本身不会被卸载（那是 Anthropic 官方装的），订阅状态完全不受影响。
+
+---
+
+## 🔒 安全 & 隐私
+
+- **Token 全在本机**：GitHub OAuth token 存在 `~/.claude-copilot-auth.json`（权限 0600），不外发
+- **代理日志只记元数据**：模型映射、HTTP 状态码、请求时间。**不记录** prompt 内容或响应正文
+- **流量路径**：你的代码/对话 → 本机 18080 → Copilot 服务器。中间没有第三方
+- **GitHub Copilot 隐私政策对内容的处理**：跟你日常用 VSCode Copilot 一致，请参考 [GitHub Copilot Privacy](https://docs.github.com/en/site-policy/privacy-policies/github-copilot-privacy-statement)
+- **审计**：本仓库代码 ~500 行 Node，可读完。Token 处理逻辑集中在 `proxy.mjs` 顶部
+
+---
+
 ## ⚠ 局限 & 注意
 
 - **macOS only** —— 用 launchd 守护，Linux/Windows 没适配（但 `proxy.mjs` 跨平台，自己起进程即可）
 - **依赖 Claude Code 客户端的实现细节** —— Anthropic 升级 Claude Code 改了请求格式时，可能需要更新协议翻译
 - **依赖 Copilot 内部 token 端点** —— `api.github.com/copilot_internal/v2/token` 不是官方稳定 API，GitHub 改了会断
 - **模型可用性 ≠ 配额无限** —— Copilot 每月 quota 上限按你套餐算，不是无限白嫖
+
+---
+
+## 🤝 贡献
+
+欢迎 Issue 和 PR。在提 issue 前请先：
+1. 跑 `claude-cp-status` 和 `claude-cp-log` 看是否能自助定位
+2. 翻 [踩坑实录](#-踩坑实录)，可能你的问题已经记录过修法
+3. 提 issue 时附上：`claude --version`、`node --version`、`cat ~/.claude-copilot-models.json`、相关日志片段
+
+特别需要帮助的方向：
+- Linux / Windows 适配（目前只测过 macOS）
+- 个人 Pro 套餐的模型可用性数据点
+- 国内其它代理工具的默认端口补充
 
 ---
 
@@ -306,4 +412,4 @@ alias 永远赢，wrapper 永远没机会跑。
 
 ## 📜 License
 
-MIT
+[MIT](LICENSE) © 2026 jayson-jia-dev
