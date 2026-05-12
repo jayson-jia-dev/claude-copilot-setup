@@ -202,18 +202,25 @@ echo ""
 echo "[7/8] 安装 claude-cp wrapper 和辅助 alias..."
 mkdir -p "$HOME/.local/bin"
 cp "$PKG_DIR/files/claude-cp" "$HOME/.local/bin/claude-cp"
-chmod +x "$HOME/.local/bin/claude-cp"
+chmod 755 "$HOME/.local/bin/claude-cp"  # 显式 rwxr-xr-x，避免 umask 留坑
 echo "  ✓ wrapper: ~/.local/bin/claude-cp"
 
-# 检查 ~/.local/bin 是否在 PATH 中，不在则提示加入
-if ! echo "$PATH" | grep -q "$HOME/.local/bin"; then
-    echo "  ⚠ ~/.local/bin 不在 PATH 中，需要追加到 ~/.zshrc"
-    if ! grep -q '.local/bin' "$HOME/.zshrc" 2>/dev/null; then
-        echo '' >> "$HOME/.zshrc"
-        echo '# claude-cp 安装器追加' >> "$HOME/.zshrc"
-        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.zshrc"
-        echo "  ✓ 已追加 PATH 导出到 ~/.zshrc"
-    fi
+# 清理早期版本可能留下的老 alias（zsh alias 优先级高于 PATH 二进制，
+# 不清理会让 wrapper 失效）
+if grep -q "^alias claude-cp='ANTHROPIC_BASE_URL" "$HOME/.zshrc" 2>/dev/null; then
+    sed -i.bak "/^alias claude-cp='ANTHROPIC_BASE_URL/d" "$HOME/.zshrc"
+    echo "  ✓ 检测到旧版 claude-cp alias，已清理（备份在 ~/.zshrc.bak）"
+fi
+
+# 确保 ~/.local/bin 在 PATH 中
+if ! grep -q '\.local/bin' "$HOME/.zshrc" 2>/dev/null; then
+    echo '' >> "$HOME/.zshrc"
+    echo '# claude-cp 安装器追加' >> "$HOME/.zshrc"
+    echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.zshrc"
+    echo "  ✓ 已追加 PATH 导出到 ~/.zshrc"
+elif ! echo "$PATH" | grep -q "$HOME/.local/bin"; then
+    echo "  ⚠ ~/.zshrc 里已有 .local/bin 字样但当前 shell PATH 未生效"
+    echo "    重开终端或 'source ~/.zshrc' 一下"
 fi
 
 # 写辅助 alias（status/restart/log）
