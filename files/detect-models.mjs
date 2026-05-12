@@ -87,7 +87,10 @@ const FAMILIES = {
 
 // 用 /chat/completions（OpenAI 协议端点）而非 /v1/messages（Anthropic 端点）
 // 跟 proxy.mjs 转发用的端点保持一致，避免端点差异带来的可用性误差
-async function probe(model) {
+// 加重试 + 间隔，避免短时间连发触发 Copilot 抗滥用风控
+async function sleep(ms) { return new Promise(r => setTimeout(r, ms)) }
+
+async function probe(model, attempt = 1) {
   try {
     const res = await fetch(`${COPILOT_API_BASE}/chat/completions`, {
       method: "POST",
@@ -102,13 +105,20 @@ async function probe(model) {
         messages: [{ role: "user", content: "hi" }],
       }),
     })
+    // 429/限流时退避重试，最多 3 次
+    if ((res.status === 429 || res.status === 403) && attempt < 3) {
+      await sleep(2000 * attempt)
+      return probe(model, attempt + 1)
+    }
     return { ok: res.ok, status: res.status }
   } catch (e) {
     return { ok: false, status: 0, error: e.message }
   }
 }
 
-console.log("\n→ 探测各模型可用性（按从新到旧）...\n")
+// 探测策略：每家从最新版本开始，**命中第一个就停**，不再测后面的旧版本。
+// 9 个候选短时间连发会触发 Copilot 风控（403/429），命中即停最多 3 个 HTTP 请求。
+console.log("\n→ 探测各模型可用性（按从新到旧，命中即停）...\n")
 const result = {}
 for (const [family, models] of Object.entries(FAMILIES)) {
   console.log(`  [${family}]`)
@@ -116,9 +126,11 @@ for (const [family, models] of Object.entries(FAMILIES)) {
     const r = await probe(m)
     const mark = r.ok ? "✓" : "✗"
     console.log(`    ${mark} ${m.padEnd(22)} HTTP ${r.status}`)
-    if (r.ok && !result[family]) {
+    if (r.ok) {
       result[family] = m
+      break  // 命中即停，避免触发限流
     }
+    await sleep(800)  // 请求之间间隔，给 Copilot 喘息
   }
   console.log("")
 }
