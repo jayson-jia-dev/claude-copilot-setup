@@ -143,8 +143,9 @@ else
     git clone --depth 1 https://github.com/samarth777/claude-code-copilot.git "$TARGET_DIR"
 fi
 
-echo "  → 覆盖 proxy.mjs + 拷贝 detect-models.mjs"
+echo "  → 覆盖 proxy.mjs / auth.mjs / detect-models.mjs"
 cp "$PKG_DIR/files/proxy.mjs" "$TARGET_DIR/scripts/proxy.mjs"
+cp "$PKG_DIR/files/auth.mjs" "$TARGET_DIR/scripts/auth.mjs"
 cp "$PKG_DIR/files/detect-models.mjs" "$TARGET_DIR/scripts/detect-models.mjs"
 chmod +x "$TARGET_DIR/scripts/detect-models.mjs"
 
