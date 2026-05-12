@@ -102,18 +102,30 @@ for (const [family, models] of Object.entries(FAMILIES)) {
   console.log("")
 }
 
-// ─── Step 3: Haiku/Sonnet 都不可用时的兜底 ──────────────────────
-if (!result.haiku) {
-  console.log(`⚠ Haiku 全家不可用，兜底映射到 ${result.sonnet || result.opus}`)
-  result.haiku = result.sonnet || result.opus
+// ─── Step 3: Haiku/Sonnet/Opus 不可用时的兜底 ────────────────────
+// 注意先检查 opus —— 它是最后兜底锚点，没了别的没法挂靠
+if (!result.opus) {
+  console.error("\n❌ Opus 系列全部不可用 —— 探测请求全 400/403")
+  console.error("\n常见原因：")
+  console.error("  1) ~/.claude-copilot-auth.json 里 token 不是 ghu_ 类型")
+  console.error("     （Device Flow 拿的 user-to-server token 才有 Copilot Chat 权限，")
+  console.error("      gho_/ghp_/ghs_ 等同账号但权限不同的 token 全部 400）")
+  console.error("     修法: rm ~/.claude-copilot-auth.json && cd ~/claude-code-copilot && node scripts/auth.mjs")
+  console.error("")
+  console.error("  2) 网络没走梯子 / 梯子规则不覆盖 api.githubcopilot.com")
+  console.error("     检查: HTTPS_PROXY 是否设置、ClashX 配置里 anthropic/copilot 是否走代理")
+  console.error("")
+  console.error("  3) 账号 Copilot 订阅过期 / 公司收回")
+  console.error("     检查: https://github.com/settings/copilot")
+  process.exit(1)
 }
 if (!result.sonnet) {
   console.log(`⚠ Sonnet 全家不可用，兜底映射到 ${result.opus}`)
   result.sonnet = result.opus
 }
-if (!result.opus) {
-  console.error("❌ Opus 系列全部不可用，套餐有问题，没法继续")
-  process.exit(1)
+if (!result.haiku) {
+  console.log(`⚠ Haiku 全家不可用，兜底映射到 ${result.sonnet}`)
+  result.haiku = result.sonnet
 }
 
 writeFileSync(OUT_FILE, JSON.stringify(result, null, 2) + "\n")

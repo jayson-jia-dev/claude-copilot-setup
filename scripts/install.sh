@@ -153,8 +153,19 @@ echo ""
 echo "[3/8] GitHub Copilot 认证..."
 AUTH_FILE="$HOME/.claude-copilot-auth.json"
 if [ -f "$AUTH_FILE" ]; then
-    echo "  ✓ token 已存在 ($AUTH_FILE)"
-else
+    # 校验 token 类型：必须是 ghu_（Device Flow 拿到的 user-to-server token），
+    # gho_/ghp_/ghs_ 这些虽然属于同一个 GitHub 账号但调 Copilot Chat API 必 400
+    TOKEN_PREFIX=$("$NODE_BIN" -e "console.log(JSON.parse(require('fs').readFileSync('$AUTH_FILE','utf8')).access_token.slice(0,4))" 2>/dev/null)
+    if [ "$TOKEN_PREFIX" = "ghu_" ]; then
+        echo "  ✓ token 已存在 ($AUTH_FILE，类型正确: ghu_)"
+    else
+        echo "  ⚠ token 类型是 '${TOKEN_PREFIX}'，不是 Copilot 需要的 'ghu_'"
+        echo "    （可能是 gho_/ghp_ 等其它 GitHub OAuth token，没有 Copilot Chat 权限）"
+        echo "    删掉重走 Device Flow..."
+        rm -f "$AUTH_FILE"
+    fi
+fi
+if [ ! -f "$AUTH_FILE" ]; then
     echo "  → 启动 GitHub Device Flow（浏览器会自动打开）"
     cd "$TARGET_DIR"
     node scripts/auth.mjs
