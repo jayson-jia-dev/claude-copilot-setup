@@ -132,7 +132,7 @@ npm i -g @anthropic-ai/claude-code
 | 实现 | `alias claude-cp='... claude'` | `~/.local/bin/claude-cp` 可执行文件 |
 | `claude` 解析 | 跟 PATH 顺序走（不稳） | 主动扫描所有可能位置选最新的 |
 | 老版本污染（如 /usr/local/bin/claude 是 2.1.81）| 会用到老版本，**失败** | 跳过，找下一个 |
-| 同事机器适应性 | 看 PATH 命运 | **完全无视 PATH**，稳 |
+| 跨机器适应性 | 看 PATH 命运 | **完全无视 PATH**，稳 |
 
 wrapper 内置逻辑（按优先级查找）：
 1. `~/.local/bin/claude`（Anthropic 官方安装器默认位置）
@@ -166,7 +166,7 @@ claude-copilot-setup/
 
 - 原因：token 是凭证，跨机器明文复制有风险
 - 后果：每台机器跑 install.sh 时各自走一遍 GitHub Device Flow（浏览器扫码授权 30 秒）
-- 同事用的时候各自走自己的 GitHub 账号授权，互不干扰
+- 每台机器装的时候各自走 GitHub 账号授权，互不干扰
 
 ## 日常运维
 
@@ -179,30 +179,88 @@ claude-copilot-setup/
 
 代理监听 `http://localhost:18080`，日志写到 `~/Library/Logs/claude-copilot-proxy.{out,err}.log`。
 
-## 给同事用之前
+## 实测踩坑记录
 
-1. 让同事确认自己有 Copilot 订阅（不一定是 Business，个人 Pro 也行，但模型可用性可能不一样）
-2. 让同事自己装 Node + git + Claude Code（最新版）
-3. 把这个文件夹给他（AirDrop / iCloud / 内网网盘 / git 仓库都行）
-4. 让他在文件夹里跑 `bash scripts/install.sh`
-5. 装完重开终端 → `claude-cp` 即可
+搭建过程中真实踩到的问题，每条都对应一次失败 + 一次修正。
 
-如果同事是个人 Pro 而非 Business，可用模型不一样，可能需要调 `~/claude-code-copilot/scripts/proxy.mjs` 里的 `MODEL_MAP`。查实际可用模型：
-```bash
-~/claude-code-copilot && curl -s -X POST http://localhost:18080/v1/messages \
-  -H "Content-Type: application/json" -H "x-api-key: copilot-proxy" \
-  -d '{"model":"claude-opus-4-X","max_tokens":5,"messages":[{"role":"user","content":"x"}]}'
-# 看 error.message 里的 "Available models: [...]" 列表
-```
+### 1. proxy 漏发 Copilot client header → Haiku 莫名 403
 
-## 国内同事用 `claude`（订阅路径）的坑
+最早 proxy.mjs 转发到 Copilot 时只带了 `Authorization` 和 `User-Agent`，没带
+`Copilot-Integration-Id` / `Editor-Version` / `Editor-Plugin-Version`。
+Copilot 后端把它识别成 `copilot-language-server` 通道（权限受限），
+所以 Haiku 4.5 等模型返回 `403 Access to this endpoint is forbidden`。
+
+**修法**：proxy.mjs 显式声明 `Copilot-Integration-Id: vscode-chat` 整套 VSCode
+插件标识。补上之后 Haiku 直接 200 通过。
+
+### 2. 不同套餐能用的模型不同 → 写死 MODEL_MAP 必坑
+
+最早 proxy.mjs 硬编码 `claude-opus-4-7 → claude-opus-4.6`，假定所有人都跟我一样
+卡在 4.6。但 Copilot 套餐有 Pro / Business / Enterprise / 教育版等，
+能用的模型清单完全不同，并且 Copilot 后端会动态上下架。
+
+**修法**：装机时跑 `detect-models.mjs` 直接打 Copilot API 实测 opus / sonnet /
+haiku 各家最高可用版本，写入 `~/.claude-copilot-models.json`，proxy 优先用
+这份实测映射。每家 Mac 自适应自己的套餐。重测命令 `claude-cp-detect-models`。
+
+### 3. Claude.ai 国内被 GFW 屏蔽 → install.sh 静默失败
+
+`curl https://claude.ai/install.sh | bash` 在国内会返回 "App unavailable in
+region" 的 HTML 页，bash 当 shell script 执行报 syntax error。
+
+**修法**：install.sh 主动探测本地代理端口（7890 / 7897 / 6152 / 8001 …），
+检测到就在错误提示里**带前缀生成可粘贴的 curl 命令**。
+
+### 4. Clash Verge 默认端口 7897，不是 ClashX 的 7890
+
+代理端口探测列表早期只有 ClashX 的 7890。Clash Verge / Verge Rev 默认 7897，
+被漏掉，导致没写 HTTPS_PROXY 到 plist，Claude Code 启动 health check
+直连 api.anthropic.com 被拦。
+
+**修法**：探测列表扩到 7890 / 7897 / 7891 / 7898 / 6152 / 8001 / 1087 / 10809。
+
+### 5. v2.1.81 失败被误判为「不支持 BASE_URL」
+
+第一次发现老版 Claude Code 跑 `claude-cp` 时不去 localhost:18080，仍然连
+api.anthropic.com，以为是版本太老不识别 `ANTHROPIC_BASE_URL`，于是把版本门
+设到 2.1.130 一路保守上调。后来发现真正原因是：**Claude Code 启动时的 region
+health check 不读 BASE_URL**，固定打 api.anthropic.com。国内没配 HTTPS_PROXY
+时被 GFW 拦掉，跟版本无关。
+
+**修法**：版本门降到 2.0.0 sanity check，关键是装机时同时写 HTTPS_PROXY 到
+`~/.zshrc`（让订阅路径也能走梯子）和 plist（让 proxy 进程拉 Copilot token
+时也能走梯子）。
+
+### 6. zsh alias 优先级高于 PATH binary
+
+早期方案用 alias 实现 `claude-cp`，结果 alias 直接拼成 `... claude` 命令，
+`claude` 走 PATH 解析就抓到了 `/usr/local/bin/claude` 那个老版本（v2.1.81）。
+版本升级了 PATH 上还残留老 claude 时，alias 永远赢，wrapper 永远没机会跑。
+
+**修法**：改用可执行 wrapper 脚本（`~/.local/bin/claude-cp`），脚本内主动扫
+所有可能的 claude 安装位置（`.local/bin`、各 nvm 版本、Bun、Volta、Homebrew
+等），按版本号挑最新的用。完全无视 PATH 顺序。
+
+### 7. 复用 cc-switch 的 Copilot profile 灾难现场
+
+最早想着「cc-switch 有 Copilot profile 的功能，直接用它就行」。结果
+cc-switch 的「启用本地路由」是**全局开关，profile 切换不清理状态**，
+打开后所有 Claude Code 窗口都被劫持到 localhost，订阅会话全挂，
+关掉 Copilot profile 也没用，必须**手动关本地路由**才能恢复——
+期间所有 Claude Code 上下文全部丢失。
+
+**修法**：旁路 cc-switch，自己用 Node + launchd 起独立代理，
+日志透明、不污染全局配置。
+
+### 8. Claude.ai 必须**完整**走代理（直连规则不能放白名单）
 
 `claude-cp` 走 localhost 代理 → Copilot，**不依赖**外网到 Anthropic。
-但如果同事还想顺便用 `claude`（走他自己的订阅），就需要让 `claude` 命令也走梯子。
+但 `claude` 走订阅时直连 `api.anthropic.com`，必须走梯子。
 
 install.sh 探测到本地代理时会**自动**往 `~/.zshrc` 写：
+
 ```bash
-export HTTPS_PROXY="http://127.0.0.1:7890"  # 端口按实测改
+export HTTPS_PROXY="http://127.0.0.1:7890"   # 端口按实测改
 export HTTP_PROXY="http://127.0.0.1:7890"
 export NO_PROXY="localhost,127.0.0.1,*.local"
 ```
@@ -215,12 +273,9 @@ export NO_PROXY="localhost,127.0.0.1,*.local"
 - `claude.ai`
 - `*.claude.com`
 
-Claude Code 必须**完整**走代理。某些梯子的预设规则会把"AI/办公"类域名当国内业务走直连，
-导致 Claude Code 自检请求被 GFW 拦截，报"App unavailable in region"。
-这是踩过的坑，**直连模式必死**。
-
-ClashX 的话，打开「编辑配置文件」搜 `anthropic` 或 `claude`，
-有任何 `DIRECT` 规则全改成走代理。
+某些梯子预设规则会把"AI/办公"类域名分流到直连，导致 Claude Code
+自检请求被 GFW 拦截。ClashX 的话打开配置文件搜 `anthropic` 或
+`claude`，有任何 `DIRECT` 规则全改成走代理。
 
 ## 不要做的事
 

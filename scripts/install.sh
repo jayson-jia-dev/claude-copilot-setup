@@ -35,7 +35,7 @@ echo "  ✓ node: $NODE_VER ($NODE_BIN)"
 # 跟 BASE_URL 支持无关。所以版本门没必要太严。
 MIN_CLAUDE="2.0.0"
 CLAUDE_FOUND=""
-CLAUDE_SCANNED=""  # 调试用：记录扫过哪些版本，失败时打印出来给同事看
+CLAUDE_SCANNED=""  # 调试用：记录扫过哪些版本，失败时打印出来辅助排查
 
 # 候选路径合集（从最权威到最兜底）
 CANDIDATES=(
