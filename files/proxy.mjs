@@ -248,6 +248,12 @@ async function collectCopilotResponse(openaiReq, token) {
   if (hasImages) headers["Copilot-Vision-Request"] = "true"
 
   const reqBody = { ...openaiReq, stream: false }
+  // DEBUG: log exact body sent to Copilot (truncated to first 800 chars)
+  console.log(`[debug:req] POST ${bearer.api_base}/chat/completions`)
+  console.log(`[debug:req] body keys: ${Object.keys(reqBody).join(',')}`)
+  console.log(`[debug:req] model: ${reqBody.model}  msgs: ${reqBody.messages?.length}  tools: ${(reqBody.tools||[]).length}`)
+  console.log(`[debug:req] body: ${JSON.stringify(reqBody).slice(0, 800)}`)
+
   const copilotRes = await fetch(`${bearer.api_base}/chat/completions`, {
     method: "POST",
     headers,
@@ -255,6 +261,9 @@ async function collectCopilotResponse(openaiReq, token) {
   })
   if (!copilotRes.ok) {
     const errorText = await copilotRes.text()
+    console.error(`[debug:resp] HTTP ${copilotRes.status}`)
+    console.error(`[debug:resp] resp-headers: ${Array.from(copilotRes.headers.entries()).map(([k,v]) => `${k}=${v}`).slice(0,8).join(' | ')}`)
+    console.error(`[debug:resp] body: ${errorText.slice(0, 600)}`)
     throw new Error(`Copilot API error (${copilotRes.status}): ${errorText}`)
   }
   return copilotRes.json()
@@ -1287,6 +1296,12 @@ async function handleRequest(req, res, token) {
     }
 
     // ── Normal Path (no web search) ──
+    // DEBUG: log exact body sent to Copilot
+    console.log(`[debug:req] POST ${bearer.api_base}/chat/completions`)
+    console.log(`[debug:req] body keys: ${Object.keys(openaiReq).join(',')}`)
+    console.log(`[debug:req] model: ${openaiReq.model}  msgs: ${openaiReq.messages?.length}  tools: ${(openaiReq.tools||[]).length}  stream: ${openaiReq.stream}`)
+    console.log(`[debug:req] body: ${JSON.stringify(openaiReq).slice(0, 800)}`)
+
     const copilotRes = await fetch(
       `${bearer.api_base}/chat/completions`,
       {
@@ -1299,6 +1314,8 @@ async function handleRequest(req, res, token) {
     if (!copilotRes.ok) {
       const errorText = await copilotRes.text()
       console.error(`✗ Copilot API error: ${copilotRes.status} ${errorText}`)
+      console.error(`[debug:resp] HTTP ${copilotRes.status}`)
+      console.error(`[debug:resp] resp-headers: ${Array.from(copilotRes.headers.entries()).map(([k,v]) => `${k}=${v}`).slice(0,8).join(' | ')}`)
 
       // Translate to Anthropic error format
       res.writeHead(copilotRes.status, { "Content-Type": "application/json" })

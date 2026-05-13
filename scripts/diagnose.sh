@@ -176,8 +176,12 @@ else
 fi
 
 # ──────────────────────────────────────────────────────────
-section "[7] 走 proxy 实测（端到端）"
+section "[7] 走 proxy 实测（端到端 + 抓 debug 请求体）"
 if lsof -nP -iTCP:18080 -sTCP:LISTEN >/dev/null 2>&1; then
+    # 标记当前日志行数，触发后只看新增内容
+    LOG_OUT_LINES_BEFORE=$(wc -l < "$OUT_LOG" 2>/dev/null || echo 0)
+    LOG_ERR_LINES_BEFORE=$(wc -l < "$ERR_LOG" 2>/dev/null || echo 0)
+
     echo "  对 proxy 18080 发请求，模型 claude-opus-4-7..."
     PROXY_RESP=$(curl -s -X POST http://localhost:18080/v1/messages \
         -H "Content-Type: application/json" \
@@ -189,6 +193,17 @@ if lsof -nP -iTCP:18080 -sTCP:LISTEN >/dev/null 2>&1; then
     PROXY_BODY=$(echo "$PROXY_RESP" | sed 's|__HTTP_STATUS__[0-9]*__||')
     echo "  HTTP $PROXY_STATUS"
     echo "  body: $(echo "$PROXY_BODY" | head -c 300)"
+
+    sleep 1
+    # 抓 proxy 这次请求产生的新日志（重点是 [debug:req] / [debug:resp]）
+    sub "本次请求 proxy out log 增量"
+    if [ "$LOG_OUT_LINES_BEFORE" -gt 0 ]; then
+        tail -n +$((LOG_OUT_LINES_BEFORE + 1)) "$OUT_LOG" | sed 's/^/  /'
+    fi
+    sub "本次请求 proxy err log 增量"
+    if [ "$LOG_ERR_LINES_BEFORE" -gt 0 ]; then
+        tail -n +$((LOG_ERR_LINES_BEFORE + 1)) "$ERR_LOG" | sed 's/^/  /'
+    fi
 else
     echo "  ⚠ proxy 没在 18080 监听，跳过端到端测"
 fi
