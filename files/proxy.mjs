@@ -15,6 +15,26 @@ import { readFileSync, existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 
+// ─── 强制 Node fetch 走 HTTPS_PROXY ───────────────────────────────────────────
+// Node 22 内置 fetch 默认**不读** HTTPS_PROXY 环境变量。如果不显式设置
+// dispatcher，Node fetch 会直连 api.business.githubcopilot.com，从家庭宽带 IP
+// 出去，Copilot 把这种 IP 当未知客户端返回 400 model_not_supported。
+// 必须用 undici 的 ProxyAgent 显式接管。undici 需 install.sh 装在
+// ~/claude-code-copilot/node_modules 里（Node 内置版本不暴露给 import）。
+const _httpsProxy = process.env.HTTPS_PROXY || process.env.https_proxy
+if (_httpsProxy) {
+  try {
+    const { ProxyAgent, setGlobalDispatcher } = await import("undici")
+    setGlobalDispatcher(new ProxyAgent(_httpsProxy))
+    console.log(`[init] 显式走 HTTPS_PROXY (undici ProxyAgent): ${_httpsProxy}`)
+  } catch (e) {
+    console.error(`[init] ⚠ 加载 undici 失败 (${e.code || e.message})，fetch 不会走代理！`)
+    console.error(`[init] 修法: cd ~/claude-code-copilot && npm i undici 后重启代理`)
+  }
+} else {
+  console.log(`[init] 未设 HTTPS_PROXY，fetch 直连`)
+}
+
 const PORT = parseInt(process.env.COPILOT_PROXY_PORT || "18080", 10)
 const AUTH_FILE =
   process.env.COPILOT_AUTH_FILE || join(homedir(), ".claude-copilot-auth.json")

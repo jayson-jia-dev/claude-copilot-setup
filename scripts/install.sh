@@ -149,6 +149,14 @@ cp "$PKG_DIR/files/auth.mjs" "$TARGET_DIR/scripts/auth.mjs"
 cp "$PKG_DIR/files/detect-models.mjs" "$TARGET_DIR/scripts/detect-models.mjs"
 chmod +x "$TARGET_DIR/scripts/detect-models.mjs"
 
+# 装 undici（Node 22 内置 fetch 默认不读 HTTPS_PROXY，必须用 undici 的 ProxyAgent
+# 显式接管。Node 内置版本不暴露给 import，必须在项目本地装一份）
+if [ ! -d "$TARGET_DIR/node_modules/undici" ]; then
+    echo "  → 装 undici 让 Node fetch 走 HTTPS_PROXY..."
+    (cd "$TARGET_DIR" && npm install --no-save --prefer-offline undici 2>&1 | tail -3) || \
+        echo "  ⚠ undici 安装失败，proxy 可能无法走 ClashX，国内/弱网会 400"
+fi
+
 # ─── [3/8] GitHub Copilot OAuth ───────────────────────────────
 echo ""
 echo "[3/8] GitHub Copilot 认证..."

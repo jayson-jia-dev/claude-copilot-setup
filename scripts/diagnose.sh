@@ -223,19 +223,12 @@ else
     # 在 EnvironmentVariables dict 末尾插入这一对 key/string
     if [ -f "$PLIST_DST" ]; then
         cp "$PLIST_DST" "${PLIST_DST}.bak-$(date +%s)"
-        # 用 python 解析 plist 改更稳
-        python3 << PYEOF
-import plistlib
-p = "$PLIST_DST"
-with open(p, "rb") as f:
-    d = plistlib.load(f)
-env = d.get("EnvironmentVariables", {})
-env["COPILOT_NO_BEARER_CACHE"] = "1"
-d["EnvironmentVariables"] = env
-with open(p, "wb") as f:
-    plistlib.dump(d, f)
-print("  ✓ plist 已注入 COPILOT_NO_BEARER_CACHE=1")
-PYEOF
+        # 用 macOS 自带的 plutil 改 plist，避开 python plistlib 在 3.14 的 expat bug
+        plutil -insert 'EnvironmentVariables.COPILOT_NO_BEARER_CACHE' \
+            -string '1' "$PLIST_DST" 2>/dev/null \
+            || plutil -replace 'EnvironmentVariables.COPILOT_NO_BEARER_CACHE' \
+                -string '1' "$PLIST_DST"
+        echo "  ✓ plist 已注入 COPILOT_NO_BEARER_CACHE=1"
         launchctl kickstart -k "gui/$(id -u)/com.jayson.claude-copilot-proxy" 2>/dev/null
         sleep 3
     fi
@@ -292,6 +285,15 @@ for PORT in 7890 7891 7897 7898 6152 8001 1087 10809; do
         echo "  ✓ $PORT 在监听"
     fi
 done
+
+sub "出口 IP 对比（curl vs Node fetch）"
+echo "  curl 出口 IP  : $(curl -s --max-time 5 https://api.ipify.org 2>/dev/null || echo 'fail')"
+NODE_IP=$(node -e "fetch('https://api.ipify.org').then(r=>r.text()).then(t=>console.log(t)).catch(e=>console.log('ERR:'+e.message))" 2>/dev/null)
+echo "  Node fetch IP : $NODE_IP"
+echo ""
+echo "  → 如果两者 IP 不同，说明 Node fetch 没走 HTTPS_PROXY（直连）"
+echo "  → home/家庭 IP 调 Copilot 会被风控成 400"
+echo "  → 修法：proxy.mjs 要用 undici ProxyAgent 强制走代理（最新代码已加）"
 
 # ──────────────────────────────────────────────────────────
 section "[10] Claude Code 客户端"
