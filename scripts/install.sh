@@ -291,7 +291,9 @@ fi
 echo ""
 echo "  → 实测当前 Copilot 套餐可用的最高级 opus/sonnet/haiku..."
 echo ""
-if "$NODE_BIN" "$TARGET_DIR/scripts/detect-models.mjs" 2>&1 | sed 's/^/    /'; then
+# 显式把 HTTPS_PROXY 传给子进程，detect-models 才能用 ProxyAgent 走梯子
+if HTTPS_PROXY="${UPSTREAM_PROXY:-$HTTPS_PROXY}" \
+    "$NODE_BIN" "$TARGET_DIR/scripts/detect-models.mjs" 2>&1 | sed 's/^/    /'; then
     echo ""
     echo "    → 重启代理服务加载实测映射..."
     launchctl kickstart -k "gui/$(id -u)/${PLIST_LABEL}" 2>/dev/null

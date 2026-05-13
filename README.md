@@ -293,6 +293,38 @@ alias 永远赢，wrapper 永远没机会跑。
 
 </details>
 
+<details>
+<summary><b>#9 Node 22 内置 fetch 不读 HTTPS_PROXY → 家庭/国内 IP 直连 Copilot 被风控成 400</b></summary>
+
+这是最隐蔽的一个坑，折腾了大半天才定位到。
+
+**症状**：办公室 Mac 一切正常，家里 Mac 同样的代码、同样的 token、同样的 HTTPS_PROXY，
+`detect-models` 全返回 400 `model_not_supported`，`claude-cp` 第一次请求也 400。
+诡异的是 `curl` 走代理出口 IP 是机场节点（境外），`node -e "fetch(...)"` 同一个进程里
+出口 IP 却是家庭宽带 IP。
+
+**根因**：Node 18+ 内置的 `fetch`（基于 undici）**默认不读 HTTPS_PROXY 环境变量**，
+跟 `curl` / `requests` / `axios` 都不一样。proxy 进程虽然 launchd plist 里注入了
+HTTPS_PROXY，但 fetch 调 `api.github.com` 拿 Copilot Bearer 时直连出去，被 Copilot
+后端的家庭/国内 IP 风控成 400。
+
+**修法**：proxy.mjs 和 detect-models.mjs 顶部显式接管全局 dispatcher：
+
+```js
+import { ProxyAgent, setGlobalDispatcher } from "undici"
+if (process.env.HTTPS_PROXY) {
+  setGlobalDispatcher(new ProxyAgent(process.env.HTTPS_PROXY))
+}
+```
+
+install.sh 调 detect-models 时也要显式 `HTTPS_PROXY=... node detect-models.mjs` —— 
+launchd 注入的环境变量子进程能继承，但首次装机的交互式 shell 不会自动转发。
+
+diagnose.sh 的 `[9] 网络代理状态` 现在做三方对比：`curl 走代理 IP` / `Node 裸 fetch IP` /
+`Node + undici 走代理 IP`，三个值都一致才算 OK。
+
+</details>
+
 ---
 
 ## 🏛 架构

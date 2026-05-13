@@ -13,6 +13,19 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 
+// Node 22 fetch 默认不读 HTTPS_PROXY，必须用 undici ProxyAgent 接管
+// 否则家庭/国内 IP 直连 Copilot 会被风控成 400
+const _httpsProxy = process.env.HTTPS_PROXY || process.env.https_proxy
+if (_httpsProxy) {
+  try {
+    const { ProxyAgent, setGlobalDispatcher } = await import("undici")
+    setGlobalDispatcher(new ProxyAgent(_httpsProxy))
+    console.log(`✓ 走 HTTPS_PROXY: ${_httpsProxy}`)
+  } catch (e) {
+    console.error(`⚠ undici 加载失败，fetch 直连可能 400: ${e.message}`)
+  }
+}
+
 const AUTH_FILE = join(homedir(), ".claude-copilot-auth.json")
 const OUT_FILE = join(homedir(), ".claude-copilot-models.json")
 

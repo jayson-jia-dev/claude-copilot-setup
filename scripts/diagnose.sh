@@ -286,14 +286,26 @@ for PORT in 7890 7891 7897 7898 6152 8001 1087 10809; do
     fi
 done
 
-sub "出口 IP 对比（curl vs Node fetch）"
-echo "  curl 出口 IP  : $(curl -s --max-time 5 https://api.ipify.org 2>/dev/null || echo 'fail')"
-NODE_IP=$(node -e "fetch('https://api.ipify.org').then(r=>r.text()).then(t=>console.log(t)).catch(e=>console.log('ERR:'+e.message))" 2>/dev/null)
-echo "  Node fetch IP : $NODE_IP"
+sub "出口 IP 对比（curl vs Node 直连 vs Node+undici 走代理）"
+echo "  curl (走 HTTPS_PROXY) : $(curl -s --max-time 5 https://api.ipify.org 2>/dev/null || echo 'fail')"
+
+# Node 直连 fetch
+NODE_DIRECT=$(unset HTTPS_PROXY https_proxy; node -e "fetch('https://api.ipify.org').then(r=>r.text()).then(t=>console.log(t)).catch(e=>console.log('ERR:'+(e.cause?.code||e.message)))" 2>/dev/null)
+echo "  Node 裸 fetch         : $NODE_DIRECT"
+
+# Node + undici (从 claude-code-copilot 复用)
+if [ -d "$PROXY_DIR/node_modules/undici" ]; then
+    NODE_UNDICI=$(cd "$PROXY_DIR" && HTTPS_PROXY="${HTTPS_PROXY:-http://127.0.0.1:7890}" \
+        node -e "
+import('undici').then(({ProxyAgent,setGlobalDispatcher})=>{setGlobalDispatcher(new ProxyAgent(process.env.HTTPS_PROXY));return fetch('https://api.ipify.org')}).then(r=>r.text()).then(t=>console.log(t)).catch(e=>console.log('ERR:'+(e.cause?.code||e.message)))
+" 2>/dev/null)
+    echo "  Node + undici 走代理  : $NODE_UNDICI"
+else
+    echo "  Node + undici 走代理  : (undici 没装，跑 install.sh 装上)"
+fi
 echo ""
-echo "  → 如果两者 IP 不同，说明 Node fetch 没走 HTTPS_PROXY（直连）"
-echo "  → home/家庭 IP 调 Copilot 会被风控成 400"
-echo "  → 修法：proxy.mjs 要用 undici ProxyAgent 强制走代理（最新代码已加）"
+echo "  → 三个 IP 都一致说明 proxy 走代理 OK"
+echo "  → '裸 fetch' 跟前两者不同/ECONNREFUSED 是正常的（Node fetch 不读 HTTPS_PROXY）"
 
 # ──────────────────────────────────────────────────────────
 section "[10] Claude Code 客户端"
