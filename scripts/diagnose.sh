@@ -209,6 +209,63 @@ else
 fi
 
 # ──────────────────────────────────────────────────────────
+section "[7b] 切换到「每次请求换发新 tid」模式重测"
+sub "为何要测这个"
+echo "  proxy 缓存了启动时换发的 tid，可能这个 tid 被 Copilot 实验分流到"
+echo "  '无 Claude 权限' 实验组，长期失败。NO_BEARER_CACHE=1 强制每请求"
+echo "  换新 tid，看是否能稳定 200。"
+
+PLIST_DST="$HOME/Library/LaunchAgents/com.jayson.claude-copilot-proxy.plist"
+if [ -f "$PLIST_DST" ] && grep -q "COPILOT_NO_BEARER_CACHE" "$PLIST_DST"; then
+    echo "  ✓ plist 已含 NO_BEARER_CACHE，跳过修改"
+else
+    echo "  → 临时给 plist 加 COPILOT_NO_BEARER_CACHE=1 并重启"
+    # 在 EnvironmentVariables dict 末尾插入这一对 key/string
+    if [ -f "$PLIST_DST" ]; then
+        cp "$PLIST_DST" "${PLIST_DST}.bak-$(date +%s)"
+        # 用 python 解析 plist 改更稳
+        python3 << PYEOF
+import plistlib
+p = "$PLIST_DST"
+with open(p, "rb") as f:
+    d = plistlib.load(f)
+env = d.get("EnvironmentVariables", {})
+env["COPILOT_NO_BEARER_CACHE"] = "1"
+d["EnvironmentVariables"] = env
+with open(p, "wb") as f:
+    plistlib.dump(d, f)
+print("  ✓ plist 已注入 COPILOT_NO_BEARER_CACHE=1")
+PYEOF
+        launchctl kickstart -k "gui/$(id -u)/com.jayson.claude-copilot-proxy" 2>/dev/null
+        sleep 3
+    fi
+fi
+
+if lsof -nP -iTCP:18080 -sTCP:LISTEN >/dev/null 2>&1; then
+    LOG_OUT_LINES_BEFORE2=$(wc -l < "$OUT_LOG" 2>/dev/null || echo 0)
+    LOG_ERR_LINES_BEFORE2=$(wc -l < "$ERR_LOG" 2>/dev/null || echo 0)
+
+    echo ""
+    echo "  连续 3 次请求 sonnet-4-6，每次换新 tid，看是否都 200:"
+    for i in 1 2 3; do
+        STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST http://localhost:18080/v1/messages \
+            -H "Content-Type: application/json" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "x-api-key: copilot-proxy" \
+            -d '{"model":"claude-sonnet-4-6","max_tokens":10,"messages":[{"role":"user","content":"ping"}]}' \
+            --max-time 25)
+        echo "    第 $i 次 → HTTP $STATUS"
+        sleep 2
+    done
+
+    sub "三次请求 proxy 增量日志"
+    if [ "$LOG_OUT_LINES_BEFORE2" -gt 0 ]; then
+        tail -n +$((LOG_OUT_LINES_BEFORE2 + 1)) "$OUT_LOG" | grep -E "copilot-auth|debug:req|debug:resp|→" | sed 's/^/  /'
+    fi
+fi
+
+# ──────────────────────────────────────────────────────────
 section "[8] proxy 日志最近 40 行 (out)"
 if [ -f "$OUT_LOG" ]; then
     tail -40 "$OUT_LOG" | sed 's/^/  /'

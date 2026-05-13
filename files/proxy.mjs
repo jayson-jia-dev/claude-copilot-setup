@@ -499,10 +499,13 @@ function loadAuth() {
 // Copilot 抗滥用限流（403/400 抖动 + 模型可用性虚假）。VSCode 实际是先调
 // /copilot_internal/v2/token 换一个短期 Bearer（tid=...，~30 分钟有效），
 // 用这个 Bearer 走聊天 API，限流配额完全不同。
+// 实验性开关：环境变量 COPILOT_NO_BEARER_CACHE=1 时每次请求都重新换发 tid，
+// 用于诊断"某次换发的 tid 被分到无 Claude 实验组导致 400"的怀疑
+const NO_BEARER_CACHE = process.env.COPILOT_NO_BEARER_CACHE === "1"
 let _copilotBearerCache = null
 async function getCopilotBearer(githubToken) {
   const now = Math.floor(Date.now() / 1000)
-  if (_copilotBearerCache && _copilotBearerCache.expires_at - 60 > now) {
+  if (!NO_BEARER_CACHE && _copilotBearerCache && _copilotBearerCache.expires_at - 60 > now) {
     return _copilotBearerCache
   }
   const res = await fetch(
@@ -527,7 +530,7 @@ async function getCopilotBearer(githubToken) {
     api_base: data.endpoints?.api || "https://api.githubcopilot.com",
     expires_at: data.expires_at || now + 1500,             // 默认 25 分钟
   }
-  console.log(`[copilot-auth] ✓ 换发短期 Bearer，过期: ${new Date(_copilotBearerCache.expires_at * 1000).toISOString()}, api: ${_copilotBearerCache.api_base}`)
+  console.log(`[copilot-auth] ✓ 换发短期 Bearer，过期: ${new Date(_copilotBearerCache.expires_at * 1000).toISOString()}, api: ${_copilotBearerCache.api_base}, tid_prefix: ${data.token.slice(0, 20)}..., no_cache: ${NO_BEARER_CACHE}`)
   return _copilotBearerCache
 }
 
